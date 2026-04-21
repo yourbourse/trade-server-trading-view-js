@@ -1,0 +1,5167 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Your Bourse Trading Platform REST API",
+    "description": "This document serves as high-level specifications for [Your Bourse](https://yourbourse.com)'s trading platform REST APIs.\n\nAll requests should contain the `X-YB-API-Key` header with the public API token.\n\nAll field names and values are **case-sensitive**, unless noted otherwise.\n\n# HMAC authentication\n\nAll `POST`, `PUT` and `DELETE` requests must contain HMAC signature. For [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) a pair of private and public API tokens is used.\n\nThere are two methods to generate HMAC signature: 1) with nonce, or 2) with timestamp.\n\n**1) Nonce + HMAC signature:**\n\n1. Add `X-YB-Nonce` header with nonce value. Please note that its value should be higher than any nonce sent in the previous requests.\n\n2. Create a set of key-value pairs with the following keys and values separated by `=` exactly in the order provided below. If content of the request is empty, empty string shall be used. The new line character (`\\n`) shall be used as a separator.\n\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Nonce=1464264688310\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash. \n\n**2) Timestamp + HMAC signature:**\n\n1. Add `X-YB-Timestamp` header with timestamp value (microseconds since Unix epoch).\n\n2. Create a set of key-value pairs with the following keys and values separated by `=` exactly in the order provided below. If content of the request is empty, empty string shall be used. The new line character (`\\n`) shall be used as a separator.\n\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Timestamp=1738066591010786\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash. \n\n# Conditional GETs\n\nIf a GET request to a resource does not have the `If-None-Match` header, server always returns resource version in the `ETag` header.\n\nIf a GET request to a resource has the `If-None-Match` header with the last known resource version but the resource has been updated since, server responds with a new resource representation and includes the new `ETag` header in the response.\n\nIf the value of `If-None-Match` header of a GET request matches the current resource version on the server, the server responds with the `304 Not Modified` status code and empty body. The server includes the `ETag` header to the response.\n\n# Conditional POSTs, PUTs and DELETEs\n\nAll `POST`, `PUT` and `DELETE` requests must contain the `If-Match` header with the last known resource version.\n\nIf the value of `If-Match` header of the request matches the current resource version on the server, the server proceeds with the request. Otherwise, the server responds with the `412 Precondition Failed` status. Client is expected to retrieve the latest resource version and retry the request.\n\nIf the `If-Match` header is not present in the request, status code of `412 Precondition Failed` is returned along with the error details.\n\n# HTTP Return Codes\n| Status code | Error |\n| ----- | ----- |\n| `304 Not Modified` | The requested resource has not been modified since the last time it was accessed. |\n| `400 Bad Request` | Invalid request (e.g., malformed request syntax). |\n| `401 Unauthorized` | 'X-YB-API-Key' header is missing or invalid. |\n| `403 Forbidden` | IP has been auto-banned for continuing to send requests after receiving `429 Too Many Requests` codes. |\n| `404 Not Found` | Either the resource does not exist or client is not permitted to access it. |\n| `412 Precondition Failed` | Conditional request failed. |\n| `413 Request Entity Too Large` | Request size is greater than a pre-defined threshold (security measure to avoid DDoS attacks). |\n| `415 Unsupported Media Type` | Body is not in the `application/json` format. |\n| `429 Too Many Requests` | The client has sent too many requests in a given amount of time and broke a request rate limit. |\n| `500 Internal Server Error` | An unexpected error occurred on server; the issue is on Your Bourse's side. It is important to **NOT** treat this as a failure operation; the execution status is **UNKNOWN** and could have been a success. |\n\n# Rate limits\n\nThe rate limits are based on the IP addresses, not the API keys.\n\nEach route has a `weight` which determines for the number of requests each endpoint counts for. Heavier endpoints and endpoints that do operations on multiple symbols will have a heavier `weight`.\n\nWhen a `429 Too Many Requests` is received, it's your obligation as an API to back off and not spam the API. Repeatedly violating rate limits and/or failing to back off after receiving 429s will result in an automated IP ban (HTTP status `403 Forbidden`). IP bans are tracked and scale in duration for repeat offenders.\n\nA `Retry-After` header is sent with a `403 Forbidden` or `429 Too Many Requests` responses and will give the number of seconds required to wait, in the case of a 429, to prevent a ban, or, in the case of a 403, until the ban is over.\n\nEvery response might contain `X-YB-USED-WEIGHT-(intervalNum)(intervalLetter)` headers with the used weight for the IP address for all request rate limiters defined.\n\n`intervalLetter` could be `S` (second), `M` (minute), `H` (hour) or `D` (day). `intervalNum` describes the amount of the interval. For example, `intervalNum` 10 with `intervalLetter` S means \"Every 10 seconds\".\n\n# Unfilled order count limits\n\nEvery successful order response might contain a `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` header indicating how many orders you have placed for that interval. Rejected/unsuccessful orders are not guaranteed to have `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` headers in the response.\n\nThe rate limit applies to the number of new, unfilled orders placed within a time interval. That is, orders which are partially or fully filled do not count against the rate limit.\n\nUnfilled order count is tracked by trading account and is shared across all IP addresses, all API keys, and all APIs.\n\nIf you have exceeded this, you will receive a `429 Too Many Requests` error without the `Retry-After` header.\n\n# HTTP keep-alive\n\nIt is strongly recommended to enable `Keep-Alive` and reuse HTTP connections to send and receive multiple HTTP requests/responses, as opposed to opening a new connection for every single request/response pair.",
+    "version": "26.2.23"
+  },
+  "servers": [
+    {
+      "url": "https://<IP_address>:<port>/api/v1"
+    }
+  ],
+  "paths": {
+    "/authorize": {
+      "post": {
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "User authentication",
+        "description": "Username and password authentication. \n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "login": {
+                    "type": "integer",
+                    "description": "Trading account login.",
+                    "format": "int64"
+                  },
+                  "broker": {
+                    "type": "string",
+                    "description": "Optional broker/company name for validation. If provided, must match the company name associated with the user's group. Maximum length is 63 characters.",
+                    "maxLength": 63
+                  }
+                },
+                "required": [
+                  "login"
+                ]
+              },
+              "example": {
+                "login": 123456
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/refresh": {
+      "post": {
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "Refresh API token",
+        "description": "Refresh API token. \n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout",
+        "tags": [
+          "Authorization"
+        ],
+        "description": "Send logout.\n\n`Weight` 2.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/password": {
+      "post": {
+        "tags": [
+          "Authorization"
+        ],
+        "summary": "Change password",
+        "description": "Change trading account password. \n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "description": "New password.",
+                    "example": "Secret"
+                  }
+                },
+                "required": [
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/limits": {
+      "get": {
+        "summary": "Rate limits",
+        "operationId": "getLimits",
+        "tags": [
+          "Broker Configuration"
+        ],
+        "description": "Get rate limits and unfilled order count limits.\n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/If-None-Match"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Resource version",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Limits"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Resource version.",
+                "required": true
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/symbols/get/{symbolName}": {
+      "get": {
+        "tags": [
+          "Symbols"
+        ],
+        "summary": "Get symbol",
+        "description": "Returns configuration for symbol.\n\n`Weight` 2.\n",
+        "operationId": "getSymbol",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/If-None-Match"
+          },
+          {
+            "$ref": "#/components/parameters/SymbolName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Resource version",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Symbol"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not Modified",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Resource version.",
+                "required": true
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/symbols/query": {
+      "get": {
+        "tags": [
+          "Symbols"
+        ],
+        "summary": "Get all symbols",
+        "description": "Returns configuration for all available symbols.\n\n`Weight` 20.\n",
+        "operationId": "getSymbols",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          },
+          {
+            "$ref": "#/components/parameters/MaxResults"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/If-None-Match"
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "description": "Sorting by symbol name in ascending (`asc`) or descending (`desc`) direction. Ignored if `nextToken` is present.",
+            "example": "asc"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Resource version",
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SymbolCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account/state": {
+      "post": {
+        "summary": "Trading account state",
+        "operationId": "getState",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get trading account information.\n\nConsider using WebSocket API instead, as it can decrease the workload on the servers.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/account/balances": {
+      "get": {
+        "summary": "Balances/collaterial for an account",
+        "operationId": "getBalances",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get balances/collaterial for an account.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Balances"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/open": {
+      "post": {
+        "summary": "Open orders",
+        "operationId": "getOrders",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get working and inactive orders.\n\nConsider using WebSocket API instead, as it can decrease the workload on the servers.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenOrderRequestFilter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingOrdersCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/open/single": {
+      "post": {
+        "summary": "Get single open order by order id",
+        "operationId": "getOrder",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get working or inactive order.\n\nConsider using WebSocket API instead, as it can decrease the workload on the servers.\n\n`Weight` 4.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SingleOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/completed": {
+      "post": {
+        "summary": "Orders history",
+        "operationId": "getOrdersHistory",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get order history for an account. Returned orders will have a final status (`Rejected`,\n`Filled`, `Cancelled` and `Expired`).\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderHistoryPageRequestFilter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrdersHistoryCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/completed/single": {
+      "post": {
+        "summary": "Get single historical order",
+        "operationId": "getHistoryOrder",
+        "tags": [
+          "Account"
+        ],
+        "description": "Returns single order in a final state (Rejected, Filled, Cancelled and Expired). Available history depths is limited due to performance reasons.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SingleOrderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order": {
+      "post": {
+        "summary": "Place order",
+        "operationId": "placeOrder",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Place a new order.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaceOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Modify order",
+        "operationId": "modifyOrder",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Modify an existing order.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModifyOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/{orderId}": {
+      "delete": {
+        "summary": "Cancel order",
+        "operationId": "cancelOrder",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Cancel an existing order.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/OrderId"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/order/sltp": {
+      "put": {
+        "summary": "Modify stop loss and/or take profit of order",
+        "operationId": "modifyOrderSLTP",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Modify stop loss and/or take profit of order.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModifyOrderSLTP"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModifySLTPResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sltp": {
+      "put": {
+        "summary": "Modify stop loss and/or take profit of position",
+        "operationId": "modifyPositionSLTP",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Modify stop loss and/or take profit of position.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModifyPositionSLTP"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModifySLTPResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/positions": {
+      "post": {
+        "summary": "Open positions",
+        "operationId": "getPositions",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get positions for an account.\n\nConsider using WebSocket API instead, as it can decrease the workload on the servers.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenPositionRequestFilter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionsCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trades": {
+      "post": {
+        "summary": "Trades history",
+        "operationId": "getTrades",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get a list of trades.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeHistoryPageRequestFilter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradeCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/charts": {
+      "post": {
+        "summary": "Charts",
+        "operationId": "getCharts",
+        "tags": [
+          "Charts"
+        ],
+        "description": "Request for history chart bars.\n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChartBarsPageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Candles"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/depth/{symbolName}": {
+      "get": {
+        "summary": "Depth of the market",
+        "operationId": "getDepth",
+        "tags": [
+          "Market Data"
+        ],
+        "description": "Get current depth of market for the instrument.\n`Weight` 25.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/SymbolName"
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "schema": {
+              "type": "number",
+              "enum": [
+                5,
+                10,
+                25,
+                100,
+                250,
+                1000
+              ],
+              "example": 10,
+              "default": 10
+            },
+            "description": "Max number of price bands in response.",
+            "example": 10
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/quote/{symbolName}": {
+      "get": {
+        "summary": "Get top of the book",
+        "operationId": "getTOB",
+        "tags": [
+          "Market Data"
+        ],
+        "description": "Get the best bid and ask of the instrument.\n\n`Weight` 2.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/SymbolName"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quote"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transfers": {
+      "post": {
+        "summary": "Cash/asset transfers history",
+        "operationId": "getTransfersHistory",
+        "tags": [
+          "Account"
+        ],
+        "description": "Get cash/asset transfers history for an account.\n\n`Weight` 20.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/NextToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferRequestFilter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferCollection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversion-rate/single": {
+      "post": {
+        "summary": "Get single conversion rate",
+        "operationId": "getConversionRateSingle",
+        "tags": [
+          "Conversion"
+        ],
+        "description": "Get conversion rate for a single currency pair.\n\n`Weight` 2.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SingleConversionRateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversionRate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversion-rate/batch": {
+      "post": {
+        "summary": "Get conversion rates (batch)",
+        "operationId": "getConversionRatesBatch",
+        "tags": [
+          "Conversion"
+        ],
+        "description": "Get conversion rates for multiple currency pairs.\n\nMaximum 100 items per request.\n\n`Weight` 5.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversionRatesBatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversionRatesBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entity not found at server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/now": {
+      "get": {
+        "tags": [
+          "Misc"
+        ],
+        "summary": "Health check",
+        "description": "Returns current time and server version. \n\n`Weight` 1.\n",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Now"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "If-None-Match": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "Entity version.",
+        "schema": {
+          "type": "string"
+        },
+        "example": 100
+      },
+      "If-Match": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "description": "Entity version.",
+        "schema": {
+          "type": "string"
+        },
+        "example": 100
+      },
+      "ApiKey": {
+        "name": "X-YB-API-Key",
+        "in": "header",
+        "required": true,
+        "description": "API token.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "vJJErCZDZBD07z1p4Ed91t0qob6bAL"
+      },
+      "Nonce": {
+        "name": "X-YB-Nonce",
+        "in": "header",
+        "required": false,
+        "description": "Nonce (must be larger than previous nonces). Required if HMAC signature is generated using nonce.",
+        "schema": {
+          "type": "string"
+        },
+        "example": 71665241
+      },
+      "Timestamp": {
+        "name": "X-YB-Timestamp",
+        "in": "header",
+        "required": false,
+        "description": "Timestamp (microseconds since Unix epoch). Required if HMAC signature is generated using timestamp.",
+        "schema": {
+          "type": "string"
+        },
+        "example": 1738066591010786
+      },
+      "Signature": {
+        "name": "X-YB-Sign",
+        "in": "header",
+        "required": true,
+        "description": "HMAC signature.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "IdS1L6VgJA2RKI9jF8kUyT6152kL"
+      },
+      "NextToken": {
+        "name": "X-YB-NEXT-TOKEN",
+        "in": "header",
+        "schema": {
+          "type": "string"
+        },
+        "description": "The `nextToken` returned by a previous call, which can be used to retrieve the next set of results.",
+        "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0"
+      },
+      "Locale": {
+        "name": "X-YB-Locale",
+        "in": "header",
+        "description": "Locale (language) unique identifier.",
+        "schema": {
+          "$ref": "#/components/schemas/Locale"
+        }
+      },
+      "SymbolName": {
+        "name": "symbolName",
+        "in": "path",
+        "description": "Symbol name.",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "example": "EURUSD"
+      },
+      "OrderId": {
+        "name": "orderId",
+        "description": "Order unique identifier.",
+        "in": "path",
+        "schema": {
+          "type": "integer",
+          "format": "int64"
+        },
+        "required": true
+      },
+      "Symbol": {
+        "name": "symbol",
+        "in": "query",
+        "description": "Symbol name.",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "example": "EURUSD"
+      },
+      "Interval": {
+        "name": "interval",
+        "in": "path",
+        "description": "Chart interval.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "1M",
+            "5M",
+            "15M",
+            "30M",
+            "1H",
+            "4H",
+            "D",
+            "W",
+            "M"
+          ]
+        },
+        "required": true,
+        "example": "5M"
+      },
+      "HistoryFrom": {
+        "name": "from",
+        "in": "query",
+        "description": "Timestamp (microseconds since the Unix epoch) of the leftmost required bar, including `from`.\n",
+        "schema": {
+          "type": "number"
+        },
+        "required": false,
+        "example": 1726167500000000
+      },
+      "HistoryTo": {
+        "name": "to",
+        "in": "query",
+        "description": "Timestamp (microseconds since the Unix epoch) of the rightmost required bar, including `to`. It can be in the future. In this case, the rightmost required bar is the latest available bar.\n",
+        "schema": {
+          "type": "number"
+        },
+        "required": false,
+        "example": 1726167620000000
+      },
+      "MaxResults": {
+        "name": "maxResults",
+        "in": "query",
+        "schema": {
+          "type": "integer"
+        },
+        "description": "The maximum number of results returned by the call. Ignored if `nextToken` is present.",
+        "example": 100
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "title": "A simplified representation of RFC 9457 \"Problem Details for HTTP APIs\"",
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Business logic error",
+            "description": "A short, human-readable localised summary of the problem type."
+          },
+          "detail": {
+            "type": "string",
+            "example": "Not enough margin",
+            "description": "A human-readable explanation specific to this occurrence of the problem."
+          },
+          "code": {
+            "type": "string",
+            "description": "Error code number.",
+            "example": 14
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "OkStatus": {
+        "title": "OkStatus",
+        "type": "string",
+        "description": "Status will always be `ok`.",
+        "enum": [
+          "ok"
+        ],
+        "example": "ok"
+      },
+      "ErrorStatus": {
+        "title": "ErrorStatus",
+        "type": "string",
+        "description": "Status will always be `error`.",
+        "enum": [
+          "error"
+        ],
+        "example": "error"
+      },
+      "ApiToken": {
+        "title": "ApiToken",
+        "type": "object",
+        "description": "API token.",
+        "properties": {
+          "account": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Trading account ID associated with this token.",
+            "example": 123456
+          },
+          "token": {
+            "type": "string",
+            "description": "API token acts as a session ID that the application uses for making\nrequests. This token should be protected as if it were user\ncredentials.\n",
+            "example": "frieUMo6AdidOMp7XQVSfGRTRyF5hktoRX5Pk0ijujatIHBbNvXQSO4kUyirSHF"
+          },
+          "signingToken": {
+            "type": "string",
+            "description": "Signing token used as the secret key when preparing HMAC signatures\nfor API requests. This token should be protected as if it were user\ncredentials.\n",
+            "example": "2TyjwtWsmwyCOQyb35xOXAo9fJZAl8GzEjtOhiKy0AyXpTHTX2p3qeHodDtUNCP"
+          },
+          "expiration": {
+            "type": "number",
+            "description": "The time when the token is expired is represented as the number of\nmicroseconds since the Unix epoch (00:00:00 UTC on 1 January 1970).\n",
+            "example": 1748661401000000
+          }
+        },
+        "required": [
+          "account",
+          "token",
+          "signingToken",
+          "expiration"
+        ],
+        "additionalProperties": false
+      },
+      "Locale": {
+        "title": "Locale",
+        "description": "Locale (language) unique identifier.",
+        "type": "string",
+        "enum": [
+          "en"
+        ],
+        "default": "en"
+      },
+      "Side": {
+        "description": "Side.",
+        "type": "string",
+        "enum": [
+          "buy",
+          "sell"
+        ],
+        "example": "buy"
+      },
+      "TradeType": {
+        "type": "string",
+        "enum": [
+          "In",
+          "Out",
+          "InOut"
+        ],
+        "example": "In"
+      },
+      "QuantityLots": {
+        "description": "Quantity (in lots).",
+        "type": "number",
+        "example": 0.1
+      },
+      "QuantityUnits": {
+        "description": "Quantity in units (`lots` * `lot size`).",
+        "type": "number",
+        "example": 10000
+      },
+      "AccountSummaryRow": {
+        "title": "AccountSummaryRow",
+        "type": "array",
+        "description": "Localised Account Summary Row configuration.",
+        "items": {
+          "$ref": "#/components/schemas/AccountSummaryRowItem"
+        },
+        "example": [
+          {
+            "id": "accountBalance",
+            "title": "Account Balance"
+          },
+          {
+            "id": "Equity",
+            "title": "Realized P/L"
+          },
+          {
+            "id": "Open Profit",
+            "title": "Unrealized P/L"
+          }
+        ]
+      },
+      "AccountSummaryRowItem": {
+        "title": "AccountSummaryRowItem",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique Account Summary Row item identifier."
+          },
+          "title": {
+            "type": "string",
+            "description": "Localised Account Summary Row item title."
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "AccountManager": {
+        "title": "AccountManager",
+        "type": "array",
+        "description": "Localised Account Manager's tables configuration.\n",
+        "items": {
+          "$ref": "#/components/schemas/AccountManagerTable"
+        },
+        "example": [
+          {
+            "id": "accountSummary",
+            "title": "",
+            "columns": [
+              {
+                "id": "todayPL",
+                "title": "Today's P&L"
+              },
+              {
+                "id": "accountValue",
+                "title": "Account Value"
+              },
+              {
+                "id": "balance",
+                "title": "Balance"
+              },
+              {
+                "id": "totalMargin",
+                "title": "Margin"
+              },
+              {
+                "id": "held",
+                "title": "Held"
+              },
+              {
+                "id": "buyingPower",
+                "title": "Buying Power"
+              }
+            ]
+          }
+        ]
+      },
+      "AccountManagerColumn": {
+        "title": "AccountManagerColumn",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "balance"
+          },
+          "title": {
+            "description": "Localised title of a column.",
+            "type": "string",
+            "example": "Balance"
+          },
+          "tooltip": {
+            "description": "Tooltip that is shown on mouse hover.",
+            "type": "string",
+            "example": "Balance column"
+          },
+          "alignment": {
+            "description": "The cell value alignment. Default value is `left`.",
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "example": "right",
+            "default": "left"
+          },
+          "isCapitalize": {
+            "description": "The first character of each word in the sentence will be capitalized. The rest of the symbols appearance does not change.",
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "AccountManagerTable": {
+        "title": "AccountManagerTable",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "accountSummary"
+          },
+          "title": {
+            "description": "Localised title of a table.",
+            "type": "string",
+            "example": "Account Summary"
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountManagerColumn"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "columns"
+        ],
+        "additionalProperties": false
+      },
+      "Duration": {
+        "title": "Duration",
+        "description": "Single order duration option (Time-in-Force).",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Duration identifier.",
+            "type": "string",
+            "example": "gtd"
+          },
+          "title": {
+            "description": "Localised title.",
+            "type": "string",
+            "example": "Good Till Date"
+          },
+          "hasDatePicker": {
+            "description": "Display date control in Order Ticket for this duration type.",
+            "type": "boolean",
+            "default": false,
+            "example": true
+          },
+          "hasTimePicker": {
+            "description": "Display time control in Order Ticket for this duration type.",
+            "type": "boolean",
+            "default": false,
+            "example": true
+          },
+          "default": {
+            "description": "Default duration. Only one duration object in the durations array can have a `true` value for this field. The default duration will be used when the user places orders in the silent mode and it will be the selected one when the user opens the Order dialog for the first time.",
+            "type": "boolean",
+            "default": false,
+            "example": true
+          },
+          "supportedOrderTypes": {
+            "description": "An optional array of order types to which the duration will be applied.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "market",
+                "stop",
+                "limit",
+                "stoplimit"
+              ]
+            },
+            "minItems": 1,
+            "example": [
+              "stop",
+              "stoplimit"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "supportedOrderTypes"
+        ],
+        "additionalProperties": false
+      },
+      "Durations": {
+        "title": "Durations",
+        "type": "array",
+        "description": "Localised array of order durations (Time-in-Force).",
+        "items": {
+          "$ref": "#/components/schemas/Duration"
+        },
+        "minItems": 1
+      },
+      "Config": {
+        "title": "Config",
+        "type": "object",
+        "properties": {
+          "accountSummaryRow": {
+            "$ref": "#/components/schemas/AccountSummaryRow"
+          },
+          "accountManager": {
+            "$ref": "#/components/schemas/AccountManager"
+          },
+          "durations": {
+            "$ref": "#/components/schemas/Durations"
+          },
+          "orderCustomFields": {
+            "$ref": "#/components/schemas/OrderCustomFields"
+          },
+          "orderHistoryCustomFields": {
+            "$ref": "#/components/schemas/OrderHistoryCustomFields"
+          },
+          "positionCustomFields": {
+            "$ref": "#/components/schemas/PositionCustomFields"
+          },
+          "netPositionCustomFields": {
+            "$ref": "#/components/schemas/PositionCustomFields"
+          },
+          "individualPositionCustomFields": {
+            "$ref": "#/components/schemas/PositionCustomFields"
+          },
+          "pullingInterval": {
+            "$ref": "#/components/schemas/PullingInterval"
+          }
+        }
+      },
+      "PullingInterval": {
+        "title": "PullingInterval",
+        "type": "object",
+        "description": "Time intervals in milliseconds to pull data from the server.\nPlease note: if the pulling interval is set above the maximum value then the maximum value will be used explicitly.\n",
+        "properties": {
+          "quotes": {
+            "description": "Time interval in milliseconds to request quote and level 2 depth updates.",
+            "type": "number",
+            "default": 500,
+            "maximum": 1000,
+            "example": 500
+          },
+          "orders": {
+            "description": "Time interval in milliseconds to request orders.",
+            "type": "number",
+            "default": 500,
+            "maximum": 1000,
+            "example": 500
+          },
+          "positions": {
+            "description": "Time interval in milliseconds to request positions.",
+            "type": "number",
+            "default": 1000,
+            "maximum": 1500,
+            "example": 1000
+          },
+          "accountManager": {
+            "description": "Time interval in milliseconds to update Account manager tables.",
+            "type": "number",
+            "default": 500,
+            "maximum": 1500,
+            "example": 1000
+          },
+          "balances": {
+            "description": "Time interval in milliseconds to request balances.",
+            "type": "number",
+            "default": 1000,
+            "maximum": 1500,
+            "example": 1000
+          }
+        }
+      },
+      "PositionCustomFields": {
+        "title": "PositionCustomFields",
+        "type": "array",
+        "description": "Position columns to be displayed in the positions table of the Account manager.\n",
+        "items": {
+          "$ref": "#/components/schemas/AccountManagerColumn"
+        },
+        "example": [
+          {
+            "id": "exchangeFee",
+            "title": "Exchange fee",
+            "tooltip": "Exchange fee for the position",
+            "alignment": "right"
+          },
+          {
+            "id": "routeFee",
+            "title": "Route fee",
+            "tooltip": "Route fee for the position",
+            "alignment": "right"
+          }
+        ]
+      },
+      "OrderCustomFields": {
+        "title": "OrderCustomFields",
+        "type": "array",
+        "description": "Order columns to be displayed in the orders table of the Account manager.\n",
+        "items": {
+          "$ref": "#/components/schemas/AccountManagerColumn"
+        },
+        "example": [
+          {
+            "id": "commission",
+            "title": "Commission",
+            "tooltip": "Commission Fees",
+            "alignment": "right"
+          }
+        ]
+      },
+      "OrderHistoryCustomFields": {
+        "title": "OrderHistoryCustomFields",
+        "type": "array",
+        "description": "History columns to be displayed in the history table of the Account manager.\n",
+        "items": {
+          "$ref": "#/components/schemas/AccountManagerColumn"
+        },
+        "example": [
+          {
+            "id": "commission",
+            "title": "Commission",
+            "tooltip": "Commission Fees",
+            "alignment": "right"
+          }
+        ]
+      },
+      "Session": {
+        "required": [
+          "d",
+          "s",
+          "e"
+        ],
+        "type": "object",
+        "properties": {
+          "d": {
+            "type": "string",
+            "enum": [
+              "Mon",
+              "Tue",
+              "Wed",
+              "Thu",
+              "Fri",
+              "Sat",
+              "Sun"
+            ],
+            "example": "Mon",
+            "description": "Week day."
+          },
+          "s": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 8,
+            "example": "00:00:00",
+            "description": "Open time."
+          },
+          "e": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 8,
+            "example": "24:00:00",
+            "description": "Close time."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Symbol": {
+        "required": [
+          "n",
+          "v",
+          "d",
+          "dp",
+          "l",
+          "tm",
+          "min",
+          "max",
+          "i",
+          "bdp",
+          "pdp",
+          "mdp",
+          "M",
+          "L",
+          "S",
+          "SLi",
+          "SLo",
+          "TP",
+          "CB",
+          "b",
+          "p",
+          "m",
+          "fok",
+          "ioc",
+          "gtc",
+          "gtd",
+          "day",
+          "ms",
+          "q",
+          "t",
+          "swL",
+          "swS",
+          "swSun",
+          "swMon",
+          "swTue",
+          "swWed",
+          "swThu",
+          "swFri",
+          "swSat",
+          "swM",
+          "swYd",
+          "swI"
+        ],
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 31,
+            "description": "Symbol name.",
+            "example": "EURUSD"
+          },
+          "v": {
+            "type": "integer",
+            "description": "Entity version.",
+            "format": "int64",
+            "example": 2
+          },
+          "d": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "description": "Symbol description.",
+            "example": "Euro vs US Dollar"
+          },
+          "ex": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "description": "Exchange for exchange-traded financial instruments.",
+            "example": "NYSE"
+          },
+          "dp": {
+            "type": "integer",
+            "description": "Pricing decimal precision.",
+            "minimum": 0,
+            "maximum": 12,
+            "format": "uint8",
+            "example": 5
+          },
+          "l": {
+            "type": "integer",
+            "description": "Quantity of a stock, commodity, financial instrument, or units of base currency in 1 lot.",
+            "format": "double",
+            "example": 100000
+          },
+          "tv": {
+            "type": "integer",
+            "format": "double",
+            "description": "Tick value (monetary value of 1 tick price change).",
+            "example": 12.5
+          },
+          "tz": {
+            "type": "integer",
+            "format": "double",
+            "description": "Tick size (the lowest allowed increment of a price change).",
+            "example": 0.01
+          },
+          "tm": {
+            "type": "string",
+            "enum": [
+              "Disabled",
+              "LongOnly",
+              "ShortOnly",
+              "CloseOnly",
+              "Full"
+            ],
+            "example": "Full",
+            "description": "Trade mode."
+          },
+          "min": {
+            "type": "integer",
+            "description": "Minimum order size (in lots, up to 8 decimal places).",
+            "format": "double",
+            "example": 0.01
+          },
+          "max": {
+            "type": "integer",
+            "description": "Maximum order size (in lots, up to 8 decimal places).",
+            "format": "double",
+            "example": 10
+          },
+          "i": {
+            "type": "integer",
+            "description": "Order size increment (in lots, up to 8 decimal places).",
+            "format": "double",
+            "example": 0.01
+          },
+          "pos": {
+            "type": "integer",
+            "description": "Maximum total position size (in lots, up to 8 decimal places). 0 - no limit.",
+            "format": "double",
+            "example": 100
+          },
+          "bdp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 12,
+            "format": "uint8",
+            "example": 2,
+            "description": "Pricing decimal precision for base currency."
+          },
+          "pdp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 12,
+            "format": "uint8",
+            "example": 2,
+            "description": "Pricing decimal precision for profit currency."
+          },
+          "mdp": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 12,
+            "format": "uint8",
+            "example": 2,
+            "description": "Pricing decimal precision for margin currency."
+          },
+          "M": {
+            "type": "boolean",
+            "description": "true - market orders are allowed, false - market orders are prohibited."
+          },
+          "L": {
+            "type": "boolean",
+            "description": "true - limit orders are allowed, false - limit orders are prohibited."
+          },
+          "S": {
+            "type": "boolean",
+            "description": "true - stop orders are allowed, false - stop orders are prohibited."
+          },
+          "SLi": {
+            "type": "boolean",
+            "description": "true - stop limit orders are allowed, false - stop limit orders are prohibited."
+          },
+          "SLo": {
+            "type": "boolean",
+            "description": "true - stop loss orders are allowed, false - stop loss orders are prohibited."
+          },
+          "TP": {
+            "type": "boolean",
+            "description": "true - take profit orders are allowed, false - take profit orders are prohibited."
+          },
+          "CB": {
+            "type": "boolean",
+            "description": "true - close by/close all orders are allowed, false - close by/close all orders are prohibited."
+          },
+          "b": {
+            "type": "string",
+            "example": "EUR",
+            "minLength": 1,
+            "maxLength": 15,
+            "description": "Base currency."
+          },
+          "p": {
+            "type": "string",
+            "example": "USD",
+            "minLength": 1,
+            "maxLength": 15,
+            "description": "Profit currency."
+          },
+          "m": {
+            "type": "string",
+            "example": "EUR",
+            "minLength": 1,
+            "maxLength": 15,
+            "description": "Margin currency."
+          },
+          "fok": {
+            "type": "boolean",
+            "description": "true - 'Fill Or Kill' orders are allowed, false - 'Fill Or Kill' orders are prohibited."
+          },
+          "ioc": {
+            "type": "boolean",
+            "description": "true - 'Immediate or Cancel' orders are allowed, false - 'Immediate or Cancel' orders are prohibited."
+          },
+          "gtc": {
+            "type": "boolean",
+            "description": "true - 'Good till Cancelled' orders are allowed, false - 'Good till Cancelled' orders are prohibited."
+          },
+          "gtd": {
+            "type": "boolean",
+            "description": "true - 'Good till Date' orders are allowed, false - 'Good till Date' orders are prohibited."
+          },
+          "day": {
+            "type": "boolean",
+            "description": "true - day orders are allowed, false - day orders are prohibited."
+          },
+          "ms": {
+            "type": "boolean",
+            "description": "true - 'Valid For Milliseconds' orders are allowed, false - 'Valid For Milliseconds' orders are prohibited."
+          },
+          "q": {
+            "description": "Quote sessions.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "t": {
+            "description": "Trade sessions.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "swL": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate for long positions."
+          },
+          "swS": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate for short positions."
+          },
+          "swSun": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Sunday."
+          },
+          "swMon": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Monday."
+          },
+          "swTue": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Tuesday."
+          },
+          "swWed": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Wednesday."
+          },
+          "swThu": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Thursday."
+          },
+          "swFri": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Friday."
+          },
+          "swSat": {
+            "type": "number",
+            "format": "double",
+            "description": "Swap rate multiplier for Saturday."
+          },
+          "swM": {
+            "type": "string",
+            "enum": [
+              "Disabled",
+              "Points",
+              "BaseCurrency",
+              "ProfitCurrency",
+              "MarginCurrency",
+              "AccountCurrency",
+              "InterestCurrent",
+              "InterestOpen",
+              "Reopen"
+            ],
+            "description": "Swap calculation mode."
+          },
+          "swYd": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of days in year for swap calculation (360 or 365)."
+          },
+          "swSt": {
+            "type": "string",
+            "pattern": "^([01]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+            "description": "Swap intraday starting time in HH:MM:SS format. Only present when `swI` is not `EndOfDay`.",
+            "example": "01:00:00"
+          },
+          "swI": {
+            "type": "string",
+            "enum": [
+              "EndOfDay",
+              "IntradayOncePerFullDay",
+              "IntradayTwicePerFullDay",
+              "IntradayThreeTimesPerFullDay",
+              "IntradayFourTimesPerFullDay"
+            ],
+            "description": "Swap charge interval. When set to `EndOfDay`, swap is charged once at the end of the trading day and `swSt` field is not included. When set to an intraday value, swap is charged at regular intervals starting from the time specified in `swSt`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SymbolCollection": {
+        "required": [
+          "symbols"
+        ],
+        "type": "object",
+        "properties": {
+          "symbols": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Symbol"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        },
+        "additionalProperties": false
+      },
+      "WorkingOrdersCollection": {
+        "required": [
+          "orders"
+        ],
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        },
+        "example": {
+          "orders": [
+            {
+              "i": 1,
+              "s": "EURUSD",
+              "v": 100,
+              "S": "Buy",
+              "t": "Limit",
+              "ap": 0,
+              "lp": 1.14344,
+              "tif": "GTC",
+              "st": "Working",
+              "c": 1738066591010786,
+              "m": 1738066591010786
+            },
+            {
+              "i": 2,
+              "s": "EURUSD",
+              "v": 100,
+              "S": "Sell",
+              "t": "Limit",
+              "fq": 50,
+              "ap": 0,
+              "lp": 1.15094,
+              "pi": "1",
+              "pt": "Order",
+              "tif": "GTC",
+              "st": "Inactive",
+              "c": 1738066591010786,
+              "m": 1738066591010786
+            }
+          ],
+          "nextToken": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0"
+        }
+      },
+      "OrderStatus": {
+        "description": "String constants to describe an order status.\n\nStatus  | Description\n----------|-------------\nInactive  | Stop Loss or Take Profit order is created but waiting for a base order to be filled.\nWorking   | Order is created and active but not executed yet.\nPartiallyFilled    | Order is partially filled and still active.\nFilled    | Order is fully filled.\nCancelled  | Order has been cancelled.\nRejected  | Order has been rejected.\nExpired  | Order has expired.\n",
+        "type": "string",
+        "enum": [
+          "Inactive",
+          "Working",
+          "PartiallyFilled",
+          "Filled",
+          "Cancelled",
+          "Rejected",
+          "Expired"
+        ],
+        "example": "Working"
+      },
+      "Order": {
+        "title": "Order",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Order unique identifier.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          },
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "q": {
+            "$ref": "#/components/schemas/QuantityLots"
+          },
+          "S": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "t": {
+            "$ref": "#/components/schemas/OrderType"
+          },
+          "fq": {
+            "description": "Filled volume (in lots).",
+            "type": "number"
+          },
+          "ap": {
+            "description": "Average price of order fills (if any).\n",
+            "type": "number"
+          },
+          "lp": {
+            "description": "Limit price for limit or stop limit orders only.",
+            "type": "number",
+            "example": 1.14214
+          },
+          "sp": {
+            "description": "Stop price for stop or stop limit orders only.",
+            "type": "number"
+          },
+          "poi": {
+            "description": "Identifier of a parent order. Should be set only for bracket orders.\n",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "ppi": {
+            "description": "Identifier of a parent position. Should be set only for bracket orders.\n",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "tif": {
+            "$ref": "#/components/schemas/TimeInForce"
+          },
+          "tt": {
+            "description": "If `tif` is `gtd` - microseconds since the Unix epoch; if `tif` is `ms` - milliseconds since order placement.",
+            "type": "number"
+          },
+          "C": {
+            "description": "Date/time when the order was created (microseconds since the Unix epoch).",
+            "type": "number"
+          },
+          "M": {
+            "description": "Date/time when the order was last modified (microseconds since the Unix epoch).",
+            "type": "number"
+          },
+          "st": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "ct": {
+            "$ref": "#/components/schemas/OrderComment"
+          },
+          "slid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Stop Loss order unique identifier (if SL is set)"
+          },
+          "tpid": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Take Profit order unique identifier (if TP is set)"
+          }
+        },
+        "required": [
+          "id",
+          "s",
+          "q",
+          "S",
+          "t",
+          "tif",
+          "C",
+          "M",
+          "st"
+        ],
+        "additionalProperties": false
+      },
+      "CustomFieldsValueItem": {
+        "title": "CustomFieldsValueItem",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Column identifier.",
+            "type": "string"
+          },
+          "v": {
+            "description": "Localised column value.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "v"
+        ],
+        "example": [
+          {
+            "id": "RealisedPL",
+            "value": 100
+          }
+        ],
+        "additionalProperties": false
+      },
+      "OrderInformationalMessage": {
+        "title": "OrderInformationalMessage",
+        "description": "Informational message description, that may be displayed for the order in the client terminal.\n",
+        "type": "object",
+        "properties": {
+          "m": {
+            "description": "Message text.",
+            "type": "string",
+            "example": "This order has been rejected due to the closed market"
+          },
+          "s": {
+            "description": "Message severity.",
+            "type": "string",
+            "enum": [
+              "info",
+              "warn",
+              "err"
+            ],
+            "example": "info"
+          }
+        },
+        "required": [
+          "t",
+          "s"
+        ],
+        "additionalProperties": false
+      },
+      "CandleInterval": {
+        "type": "string",
+        "description": "Candle interval.",
+        "enum": [
+          "1M",
+          "5M",
+          "15M",
+          "30M",
+          "1H",
+          "4H",
+          "D",
+          "W",
+          "M"
+        ],
+        "example": "1H"
+      },
+      "AccountState": {
+        "type": "object",
+        "properties": {
+          "b": {
+            "description": "Account balance.",
+            "type": "number",
+            "example": 41757.91
+          },
+          "C": {
+            "description": "Account credit.",
+            "type": "number",
+            "example": 1000
+          },
+          "pl": {
+            "description": "Unrealised profit/loss.",
+            "type": "number",
+            "example": 1053.02
+          },
+          "e": {
+            "description": "Equity. It is calculated as `balance` + `credit` + `unrealizedPL` + `collateral`.",
+            "type": "number",
+            "example": 43857.56
+          },
+          "m": {
+            "description": "Margin requirements for account.",
+            "type": "number",
+            "example": 102.19
+          },
+          "c": {
+            "type": "string",
+            "example": "USD",
+            "minLength": 1,
+            "maxLength": 15,
+            "description": "Account currency"
+          },
+          "a": {
+            "description": "Market value of collateral adjusted by liquidity margin rate.",
+            "type": "number",
+            "example": 1000
+          }
+        },
+        "required": [
+          "b",
+          "C",
+          "pl",
+          "e",
+          "m",
+          "c"
+        ],
+        "additionalProperties": false
+      },
+      "PlaceOrder": {
+        "title": "PlaceOrder",
+        "type": "object",
+        "properties": {
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "q": {
+            "$ref": "#/components/schemas/QuantityLots"
+          },
+          "S": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "t": {
+            "$ref": "#/components/schemas/OrderType"
+          },
+          "lp": {
+            "description": "Limit price for limit or stop limit order.",
+            "type": "number",
+            "example": 1.23456
+          },
+          "sp": {
+            "description": "Stop price for stop or stop limit order.",
+            "type": "number"
+          },
+          "tif": {
+            "$ref": "#/components/schemas/TimeInForce"
+          },
+          "tt": {
+            "description": "If `tif` is `GTD` - microseconds since the Unix epoch; if `tif` is `Ms` - milliseconds since order placement.",
+            "type": "number"
+          },
+          "pi": {
+            "description": "Position id.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "pbi": {
+            "description": "PositionBy id.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "sl": {
+            "description": "Stop loss price.",
+            "type": "number"
+          },
+          "tp": {
+            "description": "Take profit price.",
+            "type": "number"
+          },
+          "ct": {
+            "$ref": "#/components/schemas/OrderComment"
+          }
+        },
+        "required": [
+          "s",
+          "q",
+          "S",
+          "t",
+          "tif"
+        ],
+        "additionalProperties": false
+      },
+      "ModifyOrder": {
+        "title": "ModifyOrder",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Order unique identifier.",
+            "example": 12398765
+          },
+          "q": {
+            "$ref": "#/components/schemas/QuantityLots",
+            "description": "New remaining quantity in lots. The new total order volume will be equal to the new remaining quantity plus the already filled quantity. Cannot be modified for stop loss or take profit orders attached to a parent order or position."
+          },
+          "lp": {
+            "description": "Limit price for limit or stop limit order.",
+            "type": "number",
+            "example": 1.23456
+          },
+          "sp": {
+            "description": "Stop price for stop or stop limit order.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ModifyPositionSLTP": {
+        "title": "Modify position's stop loss and/or take profit",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Position unique identifier.",
+            "example": 12398765
+          },
+          "sl": {
+            "description": "Stop loss price. If not set, stop loss order is cancelled.",
+            "type": "number",
+            "example": 1.23456
+          },
+          "tp": {
+            "description": "Take profit price. If not set, take profit order is cancelled.",
+            "type": "number",
+            "example": 1.23486
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "ModifyOrderSLTP": {
+        "title": "Modify order's stop loss and/or take profit",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Order unique identifier.",
+            "example": 12398765
+          },
+          "sl": {
+            "description": "Stop loss price. If not set, stop loss order is cancelled.",
+            "type": "number",
+            "example": 1.23456
+          },
+          "tp": {
+            "description": "Take profit price. If not set, take profit order is cancelled.",
+            "type": "number",
+            "example": 1.23486
+          }
+        },
+        "required": [
+          "oid"
+        ],
+        "additionalProperties": false
+      },
+      "ModifySLTPResult": {
+        "type": "object",
+        "properties": {
+          "slid": {
+            "description": "StopLoss order unique identifier.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          },
+          "tpid": {
+            "description": "StopLoss order unique identifier.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          }
+        }
+      },
+      "Position": {
+        "title": "Position",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Position unique identifier.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          },
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "q": {
+            "$ref": "#/components/schemas/QuantityLots"
+          },
+          "Q": {
+            "$ref": "#/components/schemas/QuantityUnits"
+          },
+          "S": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "p": {
+            "description": "Volume-weighted average price (VWAP) of position trades.",
+            "type": "number",
+            "example": 1.2347091
+          },
+          "sl": {
+            "description": "Stop loss price.",
+            "type": "number",
+            "example": 1.24739
+          },
+          "tp": {
+            "description": "Take profit price.",
+            "type": "number",
+            "example": 1.22739
+          },
+          "pl": {
+            "description": "Unrealised profit/loss.",
+            "type": "number",
+            "example": 19.4739
+          },
+          "sw": {
+            "description": "Swaps.",
+            "type": "number",
+            "example": 0.76
+          },
+          "c": {
+            "description": "Commission.",
+            "type": "number",
+            "example": 0
+          },
+          "m": {
+            "description": "Margin.",
+            "type": "number",
+            "example": 1000
+          },
+          "f": {
+            "description": "Fees.",
+            "type": "number",
+            "example": 0
+          },
+          "mp": {
+            "description": "Market price.",
+            "type": "number",
+            "example": 1.13419
+          },
+          "C": {
+            "description": "Date/time when the position was created (microseconds since the Unix epoch).",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1738066591010786
+          },
+          "M": {
+            "description": "Date/time when the position was last modified (microseconds since the Unix epoch).",
+            "type": "number",
+            "minimum": 1,
+            "example": 1738066591010786
+          },
+          "Ci": {
+            "description": "Unique identifier of the order which created the position.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          },
+          "Mi": {
+            "description": "Unique identifier of the order which last modified the position.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159
+          },
+          "pC": {
+            "description": "Profit-to-account-currency conversion rate at the time of the last update.",
+            "type": "number",
+            "example": 1.08
+          },
+          "mC": {
+            "description": "Margin-to-account-currency conversion rate at the time of the last update.",
+            "type": "number",
+            "example": 1.08
+          }
+        },
+        "required": [
+          "id",
+          "s",
+          "q",
+          "Q",
+          "S",
+          "p",
+          "pl",
+          "sw",
+          "c",
+          "m",
+          "f",
+          "mp",
+          "C",
+          "M",
+          "Ci",
+          "Mi",
+          "pC",
+          "mC"
+        ],
+        "additionalProperties": false
+      },
+      "PositionsCollection": {
+        "required": [
+          "positions"
+        ],
+        "type": "object",
+        "properties": {
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Position"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        }
+      },
+      "TradeCollection": {
+        "required": [
+          "trades"
+        ],
+        "type": "object",
+        "properties": {
+          "trades": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Trade"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        }
+      },
+      "Trade": {
+        "title": "Trade",
+        "type": "object",
+        "description": "Trade.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 100000,
+            "description": "Trade unique identifier."
+          },
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "p": {
+            "description": "Execution price.",
+            "type": "number",
+            "example": 1.23564
+          },
+          "t": {
+            "description": "Execution time (microseconds since the Unix epoch).",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1548406235000000
+          },
+          "q": {
+            "$ref": "#/components/schemas/QuantityLots"
+          },
+          "S": {
+            "$ref": "#/components/schemas/Side"
+          },
+          "oi": {
+            "description": "Unique identifier of the order that has been filled.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1263159154
+          },
+          "pi": {
+            "description": "Unique identifier of the position that has been opened, modified or closed.",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 10098
+          },
+          "pp": {
+            "description": "Position price.",
+            "type": "number",
+            "example": 1.23564
+          },
+          "pl": {
+            "description": "Profit/loss.",
+            "type": "number",
+            "example": 1230.04
+          },
+          "sw": {
+            "description": "Swaps.",
+            "type": "number",
+            "example": 0.13
+          },
+          "c": {
+            "description": "Commission charged for the fill.",
+            "type": "number",
+            "example": 0.04
+          },
+          "C": {
+            "description": "Profit conversion rate (into account currency)",
+            "type": "number",
+            "example": 1
+          },
+          "f": {
+            "description": "Fee charged for the fill.",
+            "type": "number",
+            "example": 0
+          },
+          "T": {
+            "$ref": "#/components/schemas/TradeType"
+          },
+          "ct": {
+            "$ref": "#/components/schemas/TradeComment"
+          }
+        },
+        "required": [
+          "id",
+          "s",
+          "S",
+          "p",
+          "q",
+          "t",
+          "oi",
+          "pi",
+          "pp",
+          "pl",
+          "sw",
+          "c",
+          "C",
+          "f",
+          "T"
+        ],
+        "additionalProperties": false
+      },
+      "OrderType": {
+        "description": "Order type.",
+        "type": "string",
+        "enum": [
+          "Market",
+          "Stop",
+          "Limit",
+          "StopLimit",
+          "CloseBy"
+        ],
+        "example": "Limit"
+      },
+      "TimeInForce": {
+        "description": "Time in Force. Only `FOK` and `IOC` are valid values for `CloseBy` and `Market` orders.",
+        "type": "string",
+        "enum": [
+          "FOK",
+          "IOC",
+          "GTC",
+          "GTD",
+          "Day",
+          "Ms"
+        ]
+      },
+      "TransferCollection": {
+        "required": [
+          "transfers"
+        ],
+        "type": "object",
+        "properties": {
+          "transfers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransferHistory"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        }
+      },
+      "TransferType": {
+        "type": "string",
+        "enum": [
+          "Balance",
+          "Credit",
+          "Fee",
+          "Adjustment",
+          "Bonus",
+          "CreditBonus",
+          "Commission",
+          "DailyCommission",
+          "MonthlyCommission",
+          "AgentCommission",
+          "DailyAgentCommission",
+          "MonthlyAgentCommission",
+          "Interest",
+          "Dividend",
+          "FrankedDividend",
+          "Tax",
+          "StopoutCompensation",
+          "StopoutCreditAdjustment"
+        ],
+        "example": "Balance"
+      },
+      "TransferHistory": {
+        "title": "TransferHistory",
+        "type": "object",
+        "description": "Cash transfer.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "example": 100000,
+            "description": "Transaction ID. Should be 0 for a new cash transfer."
+          },
+          "a": {
+            "description": "Amount.",
+            "type": "number",
+            "format": "double",
+            "example": 1000
+          },
+          "T": {
+            "$ref": "#/components/schemas/TransferType"
+          },
+          "c": {
+            "description": "Amount currency or asset name.",
+            "type": "string"
+          },
+          "t": {
+            "type": "number",
+            "description": "Transaction date/time (microseconds since the Unix epoch).",
+            "example": 1726167500000000
+          },
+          "ct": {
+            "$ref": "#/components/schemas/TransferComment"
+          }
+        },
+        "required": [
+          "id",
+          "a",
+          "t",
+          "c",
+          "T"
+        ],
+        "additionalProperties": false
+      },
+      "OrdersHistoryCollection": {
+        "required": [
+          "orders"
+        ],
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        },
+        "example": {
+          "orders": [
+            {
+              "id": 1,
+              "s": "EURUSD",
+              "q": 100,
+              "S": "Buy",
+              "t": "Limit",
+              "ap": 0,
+              "lp": 1.14344,
+              "tif": "GTC",
+              "st": "Filled",
+              "c": 1738066591010786,
+              "m": 1738066591010786
+            },
+            {
+              "id": 2,
+              "s": "EURUSD",
+              "q": 100,
+              "S": "Sell",
+              "t": "Limit",
+              "F": 50,
+              "ap": 0,
+              "lp": 1.15094,
+              "pi": "1",
+              "pt": "Order",
+              "tif": "FOK",
+              "st": "Cancelled",
+              "c": 1738066591010786,
+              "m": 1738066591010786
+            }
+          ],
+          "nextToken": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0"
+        }
+      },
+      "Balances": {
+        "title": "Balances",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Balance"
+        }
+      },
+      "Balance": {
+        "title": "Balance",
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string",
+            "description": "Asset.",
+            "example": "BTC"
+          },
+          "d": {
+            "type": "string",
+            "description": "Asset description.",
+            "example": "Bitcoin"
+          },
+          "t": {
+            "type": "number",
+            "description": "Total amount of the balance.",
+            "example": 1000
+          },
+          "av": {
+            "type": "number",
+            "description": "The balance available to the user.",
+            "example": 10
+          },
+          "r": {
+            "type": "number",
+            "description": "Liquidity margin rate. For example, if it is set to 0.5, only 50% of market value can be used for collateral purposes.",
+            "example": 0.5,
+            "default": 1
+          },
+          "p": {
+            "type": "number",
+            "description": "Market price (if applicable)",
+            "example": 104.24
+          }
+        },
+        "required": [
+          "a",
+          "t",
+          "av"
+        ],
+        "additionalProperties": false
+      },
+      "SymbolName": {
+        "description": "Symbol name.",
+        "type": "string",
+        "example": "EURUSD",
+        "minLength": 1,
+        "maxLength": 31
+      },
+      "OrderComment": {
+        "description": "Order comment.",
+        "type": "string",
+        "maxLength": 63
+      },
+      "TradeComment": {
+        "description": "Trade comment.",
+        "type": "string",
+        "maxLength": 63
+      },
+      "TransferComment": {
+        "description": "Transfer comment.",
+        "type": "string",
+        "maxLength": 63
+      },
+      "Candle": {
+        "title": "Candle",
+        "type": "object",
+        "properties": {
+          "t": {
+            "description": "Bar start time (microseconds since the Unix epoch).",
+            "type": "number",
+            "example": 1778942400
+          },
+          "o": {
+            "description": "Open price.",
+            "type": "number",
+            "example": 1.12345
+          },
+          "h": {
+            "description": "High price.",
+            "type": "number",
+            "example": 1.1237
+          },
+          "l": {
+            "description": "Low price.",
+            "type": "number",
+            "example": 1.1212
+          },
+          "c": {
+            "description": "Close price.",
+            "type": "number",
+            "example": 1.12346
+          },
+          "v": {
+            "description": "Volume.",
+            "type": "number",
+            "example": 120
+          }
+        },
+        "required": [
+          "t",
+          "o",
+          "h",
+          "l",
+          "c",
+          "v"
+        ],
+        "additionalProperties": false
+      },
+      "Candles": {
+        "title": "CandlesResponse",
+        "type": "object",
+        "properties": {
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "i": {
+            "$ref": "#/components/schemas/CandleInterval"
+          },
+          "d": {
+            "description": "Array of chart bars",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Candle"
+            }
+          },
+          "nextToken": {
+            "type": "string",
+            "example": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0",
+            "description": "A token indicating there are more results available. If there are no more results, no token is included in the response. The value of `nextToken` is a unique pagination token for each page. To retrieve the next page of results, make the call again using the returned token. Keep all other arguments unchanged. Using an expired pagination token results in an `412 Precondition Failed` error."
+          }
+        },
+        "required": [
+          "s",
+          "i",
+          "d"
+        ],
+        "additionalProperties": false
+      },
+      "Book": {
+        "title": "Book",
+        "type": "object",
+        "description": "Depth of market for an instrument.",
+        "properties": {
+          "a": {
+            "description": "Array of arrays with two numeric elements - price and volume. Sorted by `price` in ascending order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookItem"
+            }
+          },
+          "b": {
+            "description": "Array of arrays with two numeric elements - price and volume. Sorted by `price` in ascending order.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookItem"
+            }
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "additionalProperties": false,
+        "example": {
+          "a": [
+            [
+              45.1,
+              100
+            ],
+            [
+              48.4,
+              120
+            ]
+          ],
+          "b": [
+            [
+              24.7,
+              80
+            ],
+            [
+              35.6,
+              30
+            ]
+          ]
+        }
+      },
+      "BookItem": {
+        "title": "BookItem",
+        "type": "array",
+        "description": "Array with two numeric elements - price and volume.",
+        "items": {
+          "type": "number"
+        }
+      },
+      "Quote": {
+        "title": "Quote",
+        "type": "object",
+        "description": "Top of the book prices for an instrument.",
+        "properties": {
+          "s": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "bp": {
+            "description": "Best bid price.",
+            "type": "number",
+            "example": 1.13834
+          },
+          "bs": {
+            "description": "Best bid size.",
+            "type": "number",
+            "example": 500000
+          },
+          "ap": {
+            "description": "Best ask price.",
+            "type": "number",
+            "example": 1.13836
+          },
+          "as": {
+            "description": "Best ask size.",
+            "type": "number",
+            "example": 500000
+          },
+          "t": {
+            "description": "Timestamp (microseconds since the Unix epoch).",
+            "type": "number",
+            "example": 1778942400000000
+          }
+        },
+        "required": [
+          "s",
+          "bp",
+          "bs",
+          "ap",
+          "as",
+          "t"
+        ],
+        "additionalProperties": false
+      },
+      "Limit": {
+        "title": "Limit",
+        "type": "object",
+        "properties": {
+          "t": {
+            "description": "Limit type.",
+            "type": "string",
+            "enum": [
+              "weight",
+              "order"
+            ],
+            "example": "weight"
+          },
+          "i": {
+            "description": "Interval: `S` - second, `M` - minute, `H` - hour, and `D` - day.\n",
+            "type": "string",
+            "enum": [
+              "S",
+              "M",
+              "H",
+              "D"
+            ],
+            "example": "S"
+          },
+          "n": {
+            "description": "Number of intervals.",
+            "type": "number",
+            "example": 1
+          },
+          "l": {
+            "description": "Limit value.",
+            "type": "number",
+            "example": 100
+          }
+        },
+        "required": [
+          "t",
+          "i",
+          "n",
+          "l"
+        ],
+        "additionalProperties": false
+      },
+      "Limits": {
+        "title": "Limits",
+        "description": "Rate limits and unfilled order count limits.",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Limit"
+        }
+      },
+      "SuccessResponse": {
+        "title": "SuccessResponse",
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "description": "Status will always be `ok`.",
+            "enum": [
+              "ok"
+            ],
+            "example": "ok"
+          }
+        },
+        "required": [
+          "s"
+        ],
+        "additionalProperties": false
+      },
+      "Now": {
+        "title": "Health check",
+        "type": "object",
+        "description": "Health check (returns server version and current time).",
+        "properties": {
+          "now": {
+            "type": "string",
+            "description": "Current server time (UTC).",
+            "example": "2025-02-21T14:25:12.610779+00:00"
+          },
+          "version": {
+            "description": "Server version.",
+            "type": "string",
+            "example": "25.1.167"
+          }
+        },
+        "required": [
+          "now",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "SortOrder": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "description": "Sorting in ascending (`asc`) or descending (`desc`) direction",
+        "example": "asc",
+        "default": "asc"
+      },
+      "HistoryFrom": {
+        "title": "Start of the period",
+        "description": "Timestamp (microseconds since the Unix epoch) of the start of the period.",
+        "type": "number",
+        "example": 1726167500000000
+      },
+      "HistoryTo": {
+        "title": "End of the period",
+        "description": "Timestamp (microseconds since the Unix epoch) of the end of the period. It can be in the future.",
+        "type": "number",
+        "example": 1726197500000000
+      },
+      "TransferRequestFilter": {
+        "title": "Filters for cash/asset transfers report",
+        "type": "object",
+        "description": "Filters for cash/asset transfers report.",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "The maximum number of results returned by the call. If more than 100 results is requested, the server will return 100 items."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "from": {
+            "$ref": "#/components/schemas/HistoryFrom"
+          },
+          "to": {
+            "$ref": "#/components/schemas/HistoryTo"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenOrderRequestFilter": {
+        "title": "Filters for open orders report",
+        "type": "object",
+        "description": "Filters for open orders report",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "The maximum number of results returned by the call. If more than 100 results is requested, the server will return 100 items."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "symbolName": {
+            "$ref": "#/components/schemas/SymbolName"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OpenPositionRequestFilter": {
+        "title": "Filters for open positions report",
+        "type": "object",
+        "description": "Filters for open positions report",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "The maximum number of results returned by the call. If more than 100 results is requested, the server will return 100 items."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "symbolName": {
+            "$ref": "#/components/schemas/SymbolName"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OrderHistoryPageRequestFilter": {
+        "title": "Filters for trades report",
+        "type": "object",
+        "description": "Filters for trades report.",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "The maximum number of results returned by the call. If more than 100 results is requested, the server will return 100 items."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "symbolName": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "from": {
+            "$ref": "#/components/schemas/HistoryFrom"
+          },
+          "to": {
+            "$ref": "#/components/schemas/HistoryTo"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TradeHistoryPageRequestFilter": {
+        "title": "Filters for trades report",
+        "type": "object",
+        "description": "Filters for trades report.",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "The maximum number of results returned by the call. If more than 100 results is requested, the server will return 100 items."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "symbolName": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "from": {
+            "$ref": "#/components/schemas/HistoryFrom"
+          },
+          "to": {
+            "$ref": "#/components/schemas/HistoryTo"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChartBarsPageRequest": {
+        "title": "ChartBars page request",
+        "type": "object",
+        "description": "Filters for trades report.",
+        "properties": {
+          "maxResults": {
+            "type": "integer",
+            "example": 10,
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1000,
+            "description": "The expected number of results. Server can return more bars."
+          },
+          "sortOrder": {
+            "$ref": "#/components/schemas/SortOrder"
+          },
+          "symbolName": {
+            "$ref": "#/components/schemas/SymbolName"
+          },
+          "interval": {
+            "$ref": "#/components/schemas/CandleInterval"
+          },
+          "from": {
+            "$ref": "#/components/schemas/HistoryFrom"
+          },
+          "to": {
+            "$ref": "#/components/schemas/HistoryTo"
+          }
+        },
+        "required": [
+          "symbolName",
+          "interval"
+        ],
+        "additionalProperties": false
+      },
+      "SingleOrderRequest": {
+        "title": "Single order request",
+        "type": "object",
+        "description": "Single order request",
+        "properties": {
+          "orderId": {
+            "type": "integer",
+            "example": 10,
+            "description": "Order unique identifier."
+          }
+        },
+        "required": [
+          "orderId"
+        ],
+        "additionalProperties": false
+      },
+      "SingleConversionRateRequest": {
+        "title": "Single conversion rate request",
+        "type": "object",
+        "description": "Request for a single conversion rate",
+        "properties": {
+          "from": {
+            "type": "string",
+            "maxLength": 15,
+            "description": "Source currency code",
+            "example": "EUR"
+          },
+          "to": {
+            "type": "string",
+            "maxLength": 15,
+            "description": "Target currency code",
+            "example": "USD"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "ConversionRatesBatchRequest": {
+        "title": "Conversion rates batch request",
+        "type": "array",
+        "description": "Array of currency pairs for conversion rates (maximum 100 items)",
+        "maxItems": 100,
+        "items": {
+          "$ref": "#/components/schemas/SingleConversionRateRequest"
+        }
+      },
+      "ConversionRate": {
+        "title": "Conversion rate",
+        "type": "object",
+        "description": "Conversion rate value",
+        "properties": {
+          "rate": {
+            "type": "number",
+            "format": "double",
+            "description": "Conversion rate (how many units of target currency per 1 unit of source currency)",
+            "example": 1.085
+          }
+        },
+        "required": [
+          "rate"
+        ],
+        "additionalProperties": false
+      },
+      "ConversionRateBatchResult": {
+        "title": "Conversion rate batch result",
+        "type": "object",
+        "description": "Result for a single currency pair in batch request",
+        "required": [
+          "s"
+        ],
+        "properties": {
+          "s": {
+            "type": "boolean",
+            "description": "Operation success flag"
+          },
+          "r": {
+            "type": "number",
+            "format": "double",
+            "description": "Conversion rate. Present only on success.",
+            "example": 1.085
+          },
+          "d": {
+            "type": "string",
+            "example": "Currency pair not found",
+            "description": "Human-readable details in case of an error"
+          },
+          "c": {
+            "type": "number",
+            "format": "int64",
+            "example": 701,
+            "description": "Error code in case of an error"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConversionRatesBatchResponse": {
+        "title": "Conversion rates batch response",
+        "type": "array",
+        "description": "Array of conversion rate results corresponding to input pairs",
+        "items": {
+          "$ref": "#/components/schemas/ConversionRateBatchResult"
+        }
+      }
+    }
+  }
+}

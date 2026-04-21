@@ -1,0 +1,44 @@
+{
+  "private": true,
+  "description": "TradingView Integration with YourBourse Trade Server",
+  "type": "module",
+  "author": "YourBourse",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourbourse/trade-server-trading-view.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourbourse/trade-server-trading-view/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json}\"",
+    "contracts-public": "rimraf src/schema/public-api && node src/schema/contracts-public.js"
+  },
+  "dependencies": {
+    "axios": "^1.15.0",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.0",
+    "@typescript-eslint/eslint-plugin": "^8.58.2",
+    "@typescript-eslint/parser": "^8.58.2",
+    "eslint": "^9.39.4",
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.8",
+    "vite-plugin-banner": "^0.8.1",
+    "@hey-api/openapi-ts": "^0.95.0",
+    "rimraf": "^6.1.3"
+  }
+}

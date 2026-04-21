@@ -1,0 +1,16 @@
+# Build outputs
+dist/
+build/
+node_modules/
+
+# Generated files
+src/schema/**/*
+*.gen.ts
+
+# TradingView library
+charting_library/
+public/charting_library/
+
+# Locks
+package-lock.json
+yarn.lock

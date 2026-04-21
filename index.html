@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradingView Trading Platform</title>
+    <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+    <header id="app-header">
+        <h1>
+            <span>📈</span>
+            <span>YourBourse Trading Platform</span>
+            <span class="version-badge" id="app-version">v0.0.0</span>
+        </h1>
+        <div id="user-info">
+            <span id="user-login">Loading...</span>
+            <button id="logout-btn" title="Sign out">Logout</button>
+        </div>
+    </header>
+    <div id="tradingview_container">
+        <div class="loading">Loading TradingView...</div>
+    </div>
+
+    <!-- CryptoJS Library for HMAC signing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N40OKI80tFidF+rqTFKGPoWFQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    
+    <!-- TradingView Charting Library - MUST load synchronously before app.ts -->
+    <script src="/charting_library/charting_library.standalone.js"></script>
+    
+    <!-- Application Scripts - Vite will handle TypeScript -->
+    <script type="module" src="/src/app.ts"></script>
+</body>
+</html>

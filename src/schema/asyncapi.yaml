@@ -1,0 +1,2518 @@
+asyncapi: 3.0.0
+info:
+  title: Your Bourse Trading Platform WebSocket API
+  version: 26.2.23
+  description: >-
+    [Download](/docs/ws-api/asyncapi.yaml) AsyncAPI specification.
+
+
+    # General API Information
+
+
+    This document serves as high-level specifications for [Your
+    Bourse](https://yourbourse.com)'s trading platform WebSocket APIs.
+
+
+    A single connection to the API endpoint is only valid for 24 hours; expect
+    to be disconnected after the 24-hour mark.
+
+
+    WebSocket server will send a `ping` frame every 5 seconds.
+      * If the websocket server does not receive a `pong` frame back from the connection within a 10 second period, the connection will be disconnected.
+      * When you receive a `ping`, you must send a pong with a copy of `ping`'s payload as soon as possible.
+      * Unsolicited `pong` frames are allowed, but will not prevent disconnection. It is recommended that the payload for these `pong` frames are empty.
+
+    Lists are returned in **chronological order**, unless noted otherwise.
+
+
+    All timestamps are in **microseconds** since the Unix epoch (00:00:00 UTC on
+    1 January 1970), unless noted otherwise.
+
+
+    All field names and values are **case-sensitive**, unless noted otherwise.
+
+
+    # Rate Limits
+
+
+    A single connection has a limit of 5 incoming messages per second:
+
+    * `PING` frame
+
+    * `PONG` frame
+
+    * JSON controlled message (e.g. `subscribe`, `unsubscribe`)
+
+
+    A connection that goes beyond the limit will be disconnected; IPs that are
+    repeatedly disconnected may be banned. IP bans are tracked and scale in
+    duration for repeat offenders.
+
+
+    A single connection can listen to a maximum of 256 streams.
+
+
+    Only 300 connection attempts per IP address are allowed every 5 minutes.
+
+
+    Maximum of 10 simultaneous online connections per IP address are allowed.
+
+
+    # Subscribing/unsubscribing to streams
+
+
+    Send a subscription request to subscribe for updates.
+
+
+    For example:
+
+    ```
+
+    {
+      "m": "subscribe",
+      "p": {
+        "c": "orders",
+        "snapshot": true
+      },
+      "h": {
+        "X-YB-API-Key": "vJJErCZDZBD07z1p4Ed91t0qob6bAL",
+        "locale": "en"
+      },
+      "reqId": "ABC777816"
+    }
+
+    ```
+
+
+    For successful subscriptions the below response will be sent before the
+    first data update:
+
+    ```
+
+    {
+      "m": "subscribe",
+      "p": {
+        "c": "orders"
+      },
+      "s": true,
+      "reqId": "ABC777816"
+    }
+
+    ```
+
+
+    Send a request to unsubscribe from data updates:
+
+
+    ```
+
+    {
+      "m": "unsubscribe",
+      "p": [
+        "c": "orders",
+      ],
+      "reqId": "ABC777816"
+    }
+
+    ```
+
+
+    In case of an invalid subscription request, the following response will be
+    sent:
+
+    ```
+
+    {
+      "m": "subscribe",
+      "p": {
+        "c": "trades"
+      },
+      "s": false,
+      "e": {
+        "code": 10,
+        "msg": "Symbol not found",
+        "detail": "EURUSD"
+      },
+      "reqId": "ABC777816"
+    }
+
+    ```
+
+    Server may send subscription acknowledgement as a result of configuration change like symbol deletion:
+
+    ```
+    {
+      "m": "subscribe",
+      "c": "L2",
+      "p": {
+        "s": "EURUSD"
+      },
+      "s": false,
+      "e": {
+        "code": 1,
+        "msg": "",
+        "detail": "EURUSD"
+      },
+      "reqId": "ABC777816"
+    }
+    ```
+
+servers:
+  UAT:
+    host: https://<IP_address>:<port>/ws/v1
+    protocol: wss
+    description: Trade server WebSocket API endpoint
+channels:
+  trades:
+    address: trades
+    messages:
+      TradesSubscribeRequest:
+        $ref: '#/components/messages/TradesSubscribeRequest'
+      TradesUnsubscribeRequest:
+        $ref: '#/components/messages/TradesUnsubscribeRequest'
+      Trades:
+        $ref: '#/components/messages/Trades'
+      TradesSubscriptionRequestAck:
+        $ref: '#/components/messages/TradesSubscriptionRequestAck'
+  positions:
+    address: positions
+    messages:
+      PositionsSubscribeRequest:
+        $ref: '#/components/messages/PositionsSubscribeRequest'
+      PositionsUnsubscribeRequest:
+        $ref: '#/components/messages/PositionsUnsubscribeRequest'
+      PositionsSnapshot:
+        $ref: '#/components/messages/PositionsSnapshot'
+      PositionsAddedOrUpdated:
+        $ref: '#/components/messages/PositionsAddedOrUpdated'
+      PositionsDeleted:
+        $ref: '#/components/messages/PositionsDeleted'
+      PositionsSubscriptionRequestAck:
+        $ref: '#/components/messages/PositionsSubscriptionRequestAck'
+  orders:
+    address: orders
+    messages:
+      OrdersSubscribeRequest:
+        $ref: '#/components/messages/OrdersSubscribeRequest'
+      OrdersUnsubscribeRequest:
+        $ref: '#/components/messages/OrdersUnsubscribeRequest'
+      Orders:
+        $ref: '#/components/messages/Orders'
+      OrdersSubscriptionRequestAck:
+        $ref: '#/components/messages/OrdersSubscriptionRequestAck'
+  balances:
+    address: balances
+    messages:
+      BalancesSubscribeRequest:
+        $ref: '#/components/messages/BalancesSubscribeRequest'
+      BalancesUnsubscribeRequest:
+        $ref: '#/components/messages/BalancesUnsubscribeRequest'
+      Balances:
+        $ref: '#/components/messages/Balances'
+      BalancesSubscriptionRequestAck:
+        $ref: '#/components/messages/BalancesSubscriptionRequestAck'
+  states:
+    address: states
+    messages:
+      AccountStatesSubscribeRequest:
+        $ref: '#/components/messages/AccountStatesSubscribeRequest'
+      AccountStatesUnsubscribeRequest:
+        $ref: '#/components/messages/AccountStatesUnsubscribeRequest'
+      AccountStates:
+        $ref: '#/components/messages/AccountStates'
+      AccountStatesSubscriptionRequestAck:
+        $ref: '#/components/messages/AccountStatesSubscriptionRequestAck'
+  transfers:
+    address: transfers
+    messages:
+      TransfersSubscribeRequest:
+        $ref: '#/components/messages/TransfersSubscribeRequest'
+      TransfersUnsubscribeRequest:
+        $ref: '#/components/messages/TransfersUnsubscribeRequest'
+      Transfers:
+        $ref: '#/components/messages/Transfers'
+      TransfersSubscriptionRequestAck:
+        $ref: '#/components/messages/TransfersSubscriptionRequestAck'
+  ohlc:
+    address: ohlc
+    messages:
+      CandlesSubscribeRequest:
+        $ref: '#/components/messages/CandlesSubscribeRequest'
+      CandlesUnsubscribeRequest:
+        $ref: '#/components/messages/CandlesUnsubscribeRequest'
+      Candles:
+        $ref: '#/components/messages/Candles'
+      CandlesSubscriptionRequestAck:
+        $ref: '#/components/messages/CandlesSubscriptionRequestAck'
+  L1:
+    address: L1
+    messages:
+      QuoteSubscribeRequest:
+        $ref: '#/components/messages/QuoteSubscribeRequest'
+      QuoteUnsubscribeRequest:
+        $ref: '#/components/messages/QuoteUnsubscribeRequest'
+      Quotes:
+        $ref: '#/components/messages/Quotes'
+      QuoteSubscriptionRequestAck:
+        $ref: '#/components/messages/QuoteSubscriptionRequestAck'
+  L2:
+    address: L2
+    messages:
+      BookSubscribeRequest:
+        $ref: '#/components/messages/BookSubscribeRequest'
+      BookUnsubscribeRequest:
+        $ref: '#/components/messages/BookUnsubscribeRequest'
+      BookItems:
+        $ref: '#/components/messages/BookItems'
+      BookSubscriptionRequestAck:
+        $ref: '#/components/messages/BookSubscriptionRequestAck'
+  heartbeat:
+    address: heartbeat
+    messages:
+      Heartbeat:
+        $ref: '#/components/messages/Heartbeat'
+  ping:
+    address: ping
+    messages:
+      Ping:
+        $ref: '#/components/messages/Ping'
+      Pong:
+        $ref: '#/components/messages/Pong'
+operations:
+  BalancesSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/balances'
+    summary: Subscribe for balance/collateral updates.
+    messages:
+      - $ref: '#/channels/balances/messages/BalancesSubscribeRequest'
+      - $ref: '#/channels/balances/messages/BalancesUnsubscribeRequest'
+  Balances:
+    action: send
+    channel:
+      $ref: '#/channels/balances'
+    summary: Receive balance/collateral updates.
+    messages:
+      - $ref: '#/channels/balances/messages/BalancesSubscriptionRequestAck'
+      - $ref: '#/channels/balances/messages/Balances'
+  AccountStatesSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/states'
+    summary: Subscribe for trading account state updates.
+    messages:
+      - $ref: '#/channels/states/messages/AccountStatesSubscribeRequest'
+      - $ref: '#/channels/states/messages/AccountStatesUnsubscribeRequest'
+  AccountStates:
+    action: send
+    channel:
+      $ref: '#/channels/states'
+    summary: Receive trading account state updates.
+    messages:
+      - $ref: '#/channels/states/messages/AccountStatesSubscriptionRequestAck'
+      - $ref: '#/channels/states/messages/AccountStates'
+  TransfersSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/transfers'
+    summary: Subscribe for cash/asset transfer updates.
+    messages:
+      - $ref: '#/channels/transfers/messages/TransfersSubscribeRequest'
+      - $ref: '#/channels/transfers/messages/TransfersUnsubscribeRequest'
+  Transfers:
+    action: send
+    channel:
+      $ref: '#/channels/transfers'
+    summary: Receive cash/asset transfer updates.
+    messages:
+      - $ref: '#/channels/transfers/messages/TransfersSubscriptionRequestAck'
+      - $ref: '#/channels/transfers/messages/Transfers'
+  OrdersSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/orders'
+    summary: Subscribe for real-time order updates.
+    messages:
+      - $ref: '#/channels/orders/messages/OrdersSubscribeRequest'
+      - $ref: '#/channels/orders/messages/OrdersUnsubscribeRequest'
+  Orders:
+    action: send
+    channel:
+      $ref: '#/channels/orders'
+    summary: Receive real-time order updates.
+    messages:
+      - $ref: '#/channels/orders/messages/OrdersSubscriptionRequestAck'
+      - $ref: '#/channels/orders/messages/Orders'
+  PositionsSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/positions'
+    summary: Subscribe for real-time position updates.
+    messages:
+      - $ref: '#/channels/positions/messages/PositionsSubscribeRequest'
+      - $ref: '#/channels/positions/messages/PositionsUnsubscribeRequest'
+  Positions:
+    action: send
+    channel:
+      $ref: '#/channels/positions'
+    summary: Receive real-time position updates.
+    messages:
+      - $ref: '#/channels/positions/messages/PositionsSubscriptionRequestAck'
+      - $ref: '#/channels/positions/messages/PositionsSnapshot'
+      - $ref: '#/channels/positions/messages/PositionsAddedOrUpdated'
+      - $ref: '#/channels/positions/messages/PositionsDeleted'
+  TradesSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/trades'
+    summary: Subscribe/unsubscribe for real-time trade updates.
+    messages:
+      - $ref: '#/channels/trades/messages/TradesSubscribeRequest'
+      - $ref: '#/channels/trades/messages/TradesUnsubscribeRequest'
+  Trades:
+    action: send
+    channel:
+      $ref: '#/channels/trades'
+    summary: Real-time trade updates.
+    messages:
+      - $ref: '#/channels/trades/messages/TradesSubscriptionRequestAck'
+      - $ref: '#/channels/trades/messages/Trades'
+  CandlesSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/ohlc'
+    summary: Subscribe/unsubscribe for candle (OHLC) updates.
+    messages:
+      - $ref: '#/channels/ohlc/messages/CandlesSubscribeRequest'
+      - $ref: '#/channels/ohlc/messages/CandlesUnsubscribeRequest'
+  Candles:
+    action: send
+    channel:
+      $ref: '#/channels/ohlc'
+    summary: Candle (OHLC) updates.
+    messages:
+      - $ref: '#/channels/ohlc/messages/CandlesSubscriptionRequestAck'
+      - $ref: '#/channels/ohlc/messages/Candles'
+  QuoteSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/L1'
+    summary: Subscribe for top of book updates.
+    messages:
+      - $ref: '#/channels/L1/messages/QuoteSubscribeRequest'
+      - $ref: '#/channels/L1/messages/QuoteUnsubscribeRequest'
+  Quotes:
+    action: send
+    channel:
+      $ref: '#/channels/L1'
+    summary: Top of book updates.
+    messages:
+      - $ref: '#/channels/L1/messages/QuoteSubscriptionRequestAck'
+      - $ref: '#/channels/L1/messages/Quotes'
+  BookSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/L2'
+    summary: Subscribe/unsubscribe for order book updates.
+    messages:
+      - $ref: '#/channels/L2/messages/BookSubscribeRequest'
+      - $ref: '#/channels/L2/messages/BookUnsubscribeRequest'
+  Book:
+    action: send
+    channel:
+      $ref: '#/channels/L2'
+    summary: Order book updates.
+    messages:
+      - $ref: '#/channels/L2/messages/BookSubscriptionRequestAck'
+      - $ref: '#/channels/L2/messages/BookItems'
+  Heartbeat:
+    action: send
+    channel:
+      $ref: '#/channels/heartbeat'
+    summary: >-
+      The `heartbeat` channel provides a mechanism to verify that the connection
+      is alive.
+    messages:
+      - $ref: '#/channels/heartbeat/messages/Heartbeat'
+  Ping:
+    action: receive
+    channel:
+      $ref: '#/channels/ping'
+    summary: >-
+      Clients can `ping` the server to verify connection is alive and the server
+      will respond with a `pong`. This is an application level ping, distinct
+      from the protocol-level ping in the WebSockets standard.
+    messages:
+      - $ref: '#/channels/ping/messages/Ping'
+  Pong:
+    action: send
+    channel:
+      $ref: '#/channels/ping'
+    summary: Reply to a client's `ping` message.
+    messages:
+      - $ref: '#/channels/ping/messages/Pong'
+components:
+  messages:
+    Heartbeat:
+      name: Heartbeat
+      title: Heartbeat message
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Heartbeat'
+    Ping:
+      name: Ping
+      title: Ping message
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Ping'
+    Pong:
+      name: Pong
+      title: Pong message
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Pong'
+    AccountStatesSubscribeRequest:
+      name: AccountStatesSubscribeRequest
+      title: Subscribe for trading account state updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AccountStatesSubscribeRequest'
+    AccountStatesUnsubscribeRequest:
+      name: AccountStatesUnsubscribeRequest
+      title: Unsubscribe from trading account state updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AccountStatesUnsubscribeRequest'
+    AccountStatesSubscriptionRequestAck:
+      name: AccountStatesSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AccountStatesSubscriptionRequestAck'
+    AccountStates:
+      name: AccountStates
+      title: Trading account state updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AccountStates'
+    BalancesSubscribeRequest:
+      name: BalancesSubscribeRequest
+      title: Subscribe for balance/collateral updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BalancesSubscribeRequest'
+    BalancesUnsubscribeRequest:
+      name: BalancesUnsubscribeRequest
+      title: Unsubscribe from balance/collateral updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BalancesUnsubscribeRequest'
+    BalancesSubscriptionRequestAck:
+      name: BalancesSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BalancesSubscriptionRequestAck'
+    Balances:
+      name: Balances
+      title: Balance/collateral updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Balances'
+    TransfersSubscribeRequest:
+      name: TransfersSubscribeRequest
+      title: Subscribe for cash/asset transfer updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TransfersSubscribeRequest'
+    TransfersUnsubscribeRequest:
+      name: TransfersUnsubscribeRequest
+      title: Unsubscribe from cash/asset transfer updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TransfersUnsubscribeRequest'
+    TransfersSubscriptionRequestAck:
+      name: TransfersSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TransfersSubscriptionRequestAck'
+    Transfers:
+      name: Transfers
+      title: Cash/asset transfer updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Transfers'
+    OrdersSubscribeRequest:
+      name: OrdersSubscribeRequest
+      title: Subscribe for real-time order updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrdersSubscribeRequest'
+    OrdersUnsubscribeRequest:
+      name: OrdersUnsubscribeRequest
+      title: Unsubscribe from real-time order updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrdersUnsubscribeRequest'
+    OrdersSubscriptionRequestAck:
+      name: OrdersSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/OrdersSubscriptionRequestAck'
+    Orders:
+      name: Orders
+      title: Order updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Orders'
+    PositionsSubscribeRequest:
+      name: PositionsSubscribeRequest
+      title: Subscribe for real-time position updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsSubscribeRequest'
+    PositionsUnsubscribeRequest:
+      name: PositionsUnsubscribeRequest
+      title: Unsubscribe from real-time position updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsUnsubscribeRequest'
+    PositionsSubscriptionRequestAck:
+      name: PositionsSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsSubscriptionRequestAck'
+    PositionsSnapshot:
+      name: PositionsSnapshot
+      title: Positions snapshot
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsSnapshot'
+    PositionsAddedOrUpdated:
+      name: PositionsAddedOrUpdated
+      title: Added or updated positions
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsAddedOrUpdated'
+    PositionsDeleted:
+      name: PositionsDeleted
+      title: Deleted positions
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PositionsDeleted'
+    TradesSubscribeRequest:
+      name: TradesSubscribeRequest
+      title: Subscribe for real-time trade updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TradesSubscribeRequest'
+    TradesUnsubscribeRequest:
+      name: TradesUnsubscribeRequest
+      title: Unsubscribe from real-time trade updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TradesUnsubscribeRequest'
+    TradesSubscriptionRequestAck:
+      name: TradesSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TradesSubscriptionRequestAck'
+    Trades:
+      name: Trades
+      title: Trade
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Trades'
+    CandlesSubscribeRequest:
+      name: CandlesSubscribeRequest
+      title: Subscribe for candle (OHLC) updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CandlesSubscribeRequest'
+    CandlesUnsubscribeRequest:
+      name: CandlesUnsubscribeRequest
+      title: Unsubscribe from candle (OHLC) updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CandlesUnsubscribeRequest'
+    CandlesSubscriptionRequestAck:
+      name: CandlesSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CandlesSubscriptionRequestAck'
+    Candles:
+      name: Candles
+      title: Candle (OHLC) updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Candles'
+    QuoteSubscribeRequest:
+      name: QuoteSubscribeRequest
+      title: Subscribe for top of book updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/QuoteSubscribeRequest'
+    QuoteUnsubscribeRequest:
+      name: QuoteUnsubscribeRequest
+      title: Unsubscribe from top of book updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/QuoteUnsubscribeRequest'
+    QuoteSubscriptionRequestAck:
+      name: QuoteSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/QuoteSubscriptionRequestAck'
+    Quotes:
+      name: Quotes
+      title: Top of book updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Quotes'
+    BookSubscribeRequest:
+      name: BookSubscribeRequest
+      title: Subscribe for order book updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BookSubscribeRequest'
+    BookUnsubscribeRequest:
+      name: BookUnsubscribeRequest
+      title: Unsubscribe from order book updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BookUnsubscribeRequest'
+    BookSubscriptionRequestAck:
+      name: BookSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BookSubscriptionRequestAck'
+    BookItems:
+      name: BookItems
+      title: Order book updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BookItems'
+  schemas:
+    Locale:
+      title: Locale
+      description: Locale (language) id.
+      type: string
+      enum:
+        - en
+      default: en
+    reqId:
+      description: Request unique identifier.
+      type: string
+      maxLength: 63
+      example: 'ABC777816'
+    SymbolName:
+      description: Symbol name.
+      type: string
+      example: EURUSD
+
+    OrderComment:
+      description: Order comment.
+      type: string
+      maxLength: 63
+
+    TradeComment:
+      description: Trade comment.
+      type: string
+      maxLength: 63
+
+    TransferComment:
+      description: Transfer comment.
+      type: string
+      maxLength: 63
+
+    SubscriptionMethod:
+      description: Subscription method.
+      type: string
+      enum:
+        - subscribe
+        - unsubscribe
+      example: subscribe
+    SubscribeMethod:
+      description: Subscription method.
+      type: string
+      enum:
+        - subscribe
+      example: subscribe
+    UnsubscribeMethod:
+      description: Subscription method.
+      type: string
+      enum:
+        - unsubscribe
+      example: unsubscribe
+    ResponseType:
+      type: string
+      enum:
+        - s
+        - u
+      example: u
+      description: 'Response type: `s` - snapshot, `u` - update.
+                    Subscription data streams typically start with a snapshot response followed by several update responses.
+                    Some subscriptions (e.g. Market Data) may occasionally send a snapshot mid-stream, indicating that the
+                    subscriber should clear any cached stream data as if a new subscription is started.'
+    SnapshotResponseType:
+      type: string
+      enum:
+        - s
+      example: s
+      description: 'Response type: `s` - snapshot.'
+    UpdateResponseType:
+      type: string
+      enum:
+        - u
+      example: u
+      description: 'Response type: `u` - update.'
+    DeleteResponseType:
+      type: string
+      enum:
+        - d
+      example: d
+      description: 'Response type: `d` - delete.'
+    BalancesChannel:
+      type: string
+      description: Channel name (will always be `balances`).
+      enum:
+        - balances
+      example: balances
+    BalancesSubscribeRequest:
+      title: BalancesSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/BalancesChannel'
+        p:
+          type: object
+          properties:
+            snapshot:
+              description: >-
+                `true` - send snapshot of all assets held in this account;
+                `false` - updates only.
+              type: boolean
+              default: false
+              example: true
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    BalancesUnsubscribeRequest:
+      title: BalancesUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/BalancesChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    BalancesSubscriptionRequestAck:
+      title: BalancesSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/BalancesChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    Balances:
+      title: Balances
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/BalancesChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Balance'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    Balance:
+      title: Balance
+      type: object
+      properties:
+        a:
+          type: string
+          description: Asset.
+          example: BTC
+        d:
+          type: string
+          description: Asset description.
+          example: Bitcoin
+        t:
+          type: number
+          description: Total amount of the balance.
+          example: 1000
+        av:
+          type: number
+          description: The balance available to the user.
+          example: 10
+        r:
+          type: number
+          description: Liquidity margin rate. For example, if it is set to 0.5, only 50% of market value can be used for collateral purposes.
+          example: 0.5
+          default: 1.0
+        p:
+          type: number
+          description: Market price (if applicable)
+          example: 104.24
+      required:
+        - a
+        - t
+        - av
+      additionalProperties: false
+    TransfersChannel:
+      type: string
+      description: Channel name (will always be `transfers`).
+      enum:
+        - transfers
+      example: transfers
+    TransferType:
+      type: string
+      enum:
+        - Balance
+        - Credit
+        - Fee
+        - Adjustment
+        - Bonus
+        - CreditBonus
+        - Commission
+        - DailyCommission
+        - MonthlyCommission
+        - AgentCommission
+        - DailyAgentCommission
+        - MonthlyAgentCommission
+        - Interest
+        - Dividend
+        - FrankedDividend
+        - Tax
+        - StopoutCompensation
+        - StopoutCreditAdjustment
+      example: Balance
+
+    TransfersSubscribeRequest:
+      title: TransfersSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/TransfersChannel'
+        p:
+          type: object
+          properties:
+            types:
+              type: array
+              items:
+                $ref: '#/components/schemas/TransferType'
+              description: List of transaction types.
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    TransfersUnsubscribeRequest:
+      title: TransfersUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/TransfersChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    TransfersSubscriptionRequestAck:
+      title: TransfersSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/TransfersChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    Transfers:
+      title: Transfers
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/TransfersChannel'
+        t:
+          $ref: '#/components/schemas/UpdateResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+
+    Transfer:
+      title: Cash/asset transfer
+      type: object
+      description: Cash/asset transfer.
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 100000
+          description: Cash/asset transfer unique identifier. Should be absent or zero when creating a new cash/asset transfer.
+        a:
+          description: Amount.
+          type: number
+          format: double
+          example: 1000.00
+        T:
+          $ref: '#/components/schemas/TransferType'
+        c:
+          description: Amount currency or asset name.
+          type: string
+        t:
+          type: number
+          description: Transaction date/time (microseconds since the Unix epoch).
+          example: 1726167500000000
+        ct:
+          $ref: '#/components/schemas/TransferComment'
+      required:
+        - id
+        - a
+        - T
+        - c
+        - t
+      additionalProperties: false
+
+    AccountStatesChannel:
+      type: string
+      description: Channel name (will always be `states`).
+      enum:
+        - states
+      example: states
+    AccountStatesSubscribeRequest:
+      title: AccountStatesSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/AccountStatesChannel'
+        p:
+          type: object
+          properties:
+            snapshot:
+              description: >-
+                `true` - send snapshot;
+                `false` - updates only.
+              type: boolean
+              default: false
+              example: true
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    AccountStatesUnsubscribeRequest:
+      title: AccountStatesUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/AccountStatesChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    AccountStatesSubscriptionRequestAck:
+      title: AccountStatesSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/AccountStatesChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    AccountStates:
+      title: AccountStates
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/AccountStatesChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountState'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+
+    AccountState:
+      type: object
+      properties:
+        b:
+          description: Account balance.
+          type: number
+          example: 41757.91
+        C:
+          description: Account credit.
+          type: number
+          example: 1000.00
+        pl:
+          description: Unrealised profit/loss.
+          type: number
+          example: 1053.02
+        e:
+          description: Equity. It is calculated as `balance` + `credit` + `unrealizedPL` + `collateral`.
+          type: number
+          example: 43857.56
+        m:
+          description: Margin requirements for account.
+          type: number
+          example: 102.19
+        c:
+          type: string
+          example: USD
+          minLength: 1
+          maxLength: 15
+          description: Account currency
+        a:
+          description: Market value of collateral adjusted by liquidity margin rate.
+          type: number
+          example: 1000.00
+      required:
+        - b
+        - C
+        - pl
+        - e
+        - m
+        - c
+      additionalProperties: false
+
+    OrdersChannel:
+      type: string
+      description: Channel name (will always be `orders`).
+      enum:
+        - orders
+      example: orders
+    OrdersSubscribeRequest:
+      title: OrdersSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/OrdersChannel'
+        p:
+          type: object
+          properties:
+            snapshot:
+              description: >-
+                If `true` - send snapshot with open orders, `false` - updates
+                only.
+              type: boolean
+              default: false
+              example: true
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    OrdersUnsubscribeRequest:
+      title: OrdersUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/OrdersChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    OrdersSubscriptionRequestAck:
+      title: OrdersSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/OrdersChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    PositionsChannel:
+      type: string
+      description: Channel name (will always be `positions`).
+      enum:
+        - positions
+      example: positions
+    PositionsSubscribeRequest:
+      title: PositionsSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        p:
+          type: object
+          properties:
+            snapshot:
+              description: >-
+                `true` - send snapshot with open positions; `false` - updates
+                only.
+              type: boolean
+              default: false
+              example: true
+            sendPriceUpdates:
+              description: >-
+                `true` - send position price updates with open positions; `false` - no position
+                price updates are sent.
+              type: boolean
+              default: false
+              example: true
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    PositionsUnsubscribeRequest:
+      title: PositionsUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    PositionsSubscriptionRequestAck:
+      title: PositionsSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    TradesChannel:
+      type: string
+      description: Channel name (will always be `trades`).
+      enum:
+        - trades
+      example: trades
+    TradesSubscribeRequest:
+      title: TradesSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/TradesChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    TradesUnsubscribeRequest:
+      title: TradesUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/TradesChannel'
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - h
+      additionalProperties: false
+    TradesSubscriptionRequestAck:
+      title: TradesSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/TradesChannel'
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - s
+      additionalProperties: false
+    CustomFieldsValueItem:
+      title: CustomFieldsValueItem
+      type: object
+      properties:
+        id:
+          description: Column identifier.
+          type: string
+        v:
+          description: Localised column value
+          type: string
+      required:
+        - id
+        - v
+      example:
+        - id: RealisedPL
+          value: 100
+      additionalProperties: false
+    PositionsSnapshot:
+      title: Positions snapshot
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        t:
+          $ref: '#/components/schemas/SnapshotResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Position'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    PositionsAddedOrUpdated:
+      title: Added or updated positions
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        t:
+          $ref: '#/components/schemas/UpdateResponseType'
+        d:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/Position'
+              - $ref: '#/components/schemas/PositionPriceUpdate'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    PositionsDeleted:
+      title: Deleted positions
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/PositionsChannel'
+        t:
+          $ref: '#/components/schemas/DeleteResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/PositionDeleted'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    Position:
+      title: Position
+      type: object
+      properties:
+        id:
+          description: Position unique identifier.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        q:
+          $ref: '#/components/schemas/QuantityLots'
+        Q:
+          $ref: '#/components/schemas/QuantityUnits'
+        S:
+          description: Side.
+          type: string
+          enum:
+            - buy
+            - sell
+          example: buy
+        p:
+          description: Volume-weighted average price (VWAP) of position trades.
+          type: number
+          example: 1.1347091
+        sl:
+          description: Stop loss price.
+          type: number
+          example: 1.24739
+        tp:
+          description: Take profit price.
+          type: number
+          example: 1.22739
+        pl:
+          description: Unrealised profit/loss.
+          type: number
+          example: 19.4739
+        sw:
+          description: Swaps.
+          type: number
+          example: 0.76
+        c:
+          description: Commission.
+          type: number
+          example: 0.0
+        m:
+          description: Margin.
+          type: number
+          example: 1000.00
+        f:
+          description: Fees.
+          type: number
+          example: 1.00
+        mp:
+          description: Market price.
+          type: number
+          example: 1.13419
+        C:
+          description: >-
+            Date/time when the position was created (microseconds since the
+            Unix epoch).
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1738066591010786
+        M:
+          description: >-
+            Date/time when the position was last modified (microseconds since the
+            Unix epoch).
+          type: number
+          minimum: 1
+          example: 1738066591010786
+        Ci:
+          description: Unique identifier of the order which created the position.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        Mi:
+          description: Unique identifier of the order which last modified the position.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        pC:
+          description: Profit-to-account-currency conversion rate at the time of the last update.
+          type: number
+          example: 1.08
+        mC:
+          description: Margin-to-account-currency conversion rate at the time of the last update.
+          type: number
+          example: 1.08
+      required:
+        - id
+        - s
+        - q
+        - Q
+        - S
+        - p
+        - pl
+        - sw
+        - c
+        - m
+        - f
+        - mp
+        - C
+        - M
+        - Ci
+        - Mi
+        - pC
+        - mC
+      additionalProperties: false
+    PositionPriceUpdate:
+      title: Position price update
+      type: object
+      properties:
+        id:
+          description: Position unique identifier.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        mp:
+          description: Market price.
+          type: number
+          example: 1.1347091
+        pl:
+          description: Unrealised profit/loss.
+          type: number
+          example: 19.4739
+      required:
+        - id
+        - mp
+        - pl
+      additionalProperties: false
+    PositionDeleted:
+      title: Deleted position
+      type: object
+      properties:
+        id:
+          description: Position unique identifier.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+      required:
+        - id
+      additionalProperties: false
+    Trades:
+      title: Trades
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/TradesChannel'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trade'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - d
+      additionalProperties: false
+    Trade:
+      title: Trade
+      type: object
+      properties:
+        id:
+          description: Trade unique identifier.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        p:
+          description: Execution price.
+          type: number
+          example: 1.23564
+        t:
+          description: Execution time (microseconds since the Unix epoch).
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1548406235000000
+        q:
+          $ref: '#/components/schemas/QuantityLots'
+        S:
+          description: Side.
+          type: string
+          enum:
+            - buy
+            - sell
+          example: buy
+        oi:
+          description: Identifier of the order that has been filled.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159154
+        pi:
+          description: Unique identifier of the position that has been opened, modified or closed.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 10098
+        pp:
+          description: Position price.
+          type: number
+          example: 1.23564
+        pl:
+          description: Profit/loss.
+          type: number
+          example: 1230.04
+        sw:
+          description: Swaps.
+          type: number
+          example: 0.13
+        c:
+          description: Commission charged for the fill.
+          type: number
+          example: 0.04
+        C:
+          description: Profit conversion rate (into account currency)
+          type: number
+          example: 1.0
+        f:
+          description: Fee charged for the fill.
+          type: number
+          example: 0.0
+        T:
+          $ref: '#/components/schemas/TradeType'
+        ct:
+          $ref: '#/components/schemas/TradeComment'
+      required:
+        - id
+        - s
+        - p
+        - t
+        - q
+        - S
+        - oi
+        - pi
+        - pp
+        - pl
+        - sw
+        - c
+        - C
+        - f
+        - T
+      additionalProperties: false
+
+    Orders:
+      title: Orders
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/OrdersChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    QuantityLots:
+      description: Quantity (in lots).
+      type: number
+      example: 0.1
+    QuantityUnits:
+      description: Quantity in units (`lots` * `lot size`).
+      type: number
+      example: 10000
+    Side:
+      description: Side.
+      type: string
+      enum:
+        - buy
+        - sell
+      example: buy
+    OrderType:
+      description: Type.
+      type: string
+      enum:
+        - market
+        - stop
+        - limit
+        - stoplimit
+        - closeby
+      example: limit
+    TimeInForce:
+      description: Time in Force.
+      type: string
+      enum:
+        - FOK
+        - IOC
+        - GTC
+        - GTD
+        - Day
+        - Ms
+    Order:
+      title: Order
+      type: object
+      properties:
+        id:
+          description: Order unique identifier.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1263159
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        q:
+          $ref: '#/components/schemas/QuantityLots'
+        S:
+          $ref: '#/components/schemas/Side'
+        t:
+          $ref: '#/components/schemas/OrderType'
+        fq:
+          description: Filled quantity.
+          type: number
+        ap:
+          description: >
+            Average price of order fills. It should be provided for
+            filled/partially filled orders.
+          type: number
+        lp:
+          description: >-
+            Limit price for limit or stop limit orders only. You should not send
+            this field for other order types.
+          type: number
+          example: 1.14214
+        sp:
+          description: >-
+            Stop price for stop or stop limit orders only. You should not send
+            this field for other order types.
+          type: number
+        poi:
+          description: >
+            Identifier of a parent order. Should be set only for bracket orders.
+          type: integer
+          format: int64
+          minimum: 1
+        ppi:
+          description: >
+            Identifier of a parent position. Should be set only for bracket orders.
+          type: integer
+          format: int64
+          minimum: 1
+        tif:
+          $ref: '#/components/schemas/TimeInForce'
+        tt:
+          description: >-
+            If `tif` is `gtd` - microseconds since the Unix epoch; if `tif` is
+            `ms` - milliseconds since order placement.
+          type: number
+        C:
+          description: >-
+            Date/time when the order was created (microseconds since the
+            Unix epoch).
+          type: number
+        M:
+          description: >-
+            Date/time when the order was last modified (microseconds since the
+            Unix epoch).
+          type: number
+        st:
+          description: >
+            String constants to describe an order status.
+
+
+            Status  | Description
+
+            ----------|-------------
+
+            Inactive  | Stop Loss or Take Profit order is created but waiting for a base order to
+            be filled.
+
+            Working   | Order is created and active but not executed yet.
+
+            PartiallyFilled    | Order is partially filled and still active.
+
+            Filled    | Order is fully filled.
+
+            Cancelled  | Order has been cancelled.
+
+            Rejected  | Order has been rejected.
+
+            Expired  | Order has expired.
+          type: string
+          enum:
+            - Inactive
+            - Working
+            - PartiallyFilled
+            - Filled
+            - Cancelled
+            - Rejected
+            - Expired
+          example: Working
+        ct:
+          $ref: '#/components/schemas/OrderComment'
+        slid:
+          type: integer
+          format: int64
+          description: Stop Loss order unique identifier (if SL is set)
+        tpid:
+          type: integer
+          format: int64
+          description: Take Profit order unique identifier (if TP is set)
+      required:
+        - id
+        - s
+        - q
+        - S
+        - t
+        - st
+        - tif
+        - C
+        - M
+      additionalProperties: false
+
+    OrderInformationalMessage:
+      title: OrderInformationalMessage
+      description: >
+        Informational message description, that may be displayed for the order
+        in the client terminal.
+      type: object
+      properties:
+        m:
+          description: Message text
+          type: string
+          example: This order has been rejected due to the closed market
+        s:
+          description: Message severity
+          type: string
+          enum:
+            - info
+            - warn
+            - err
+          example: info
+      required:
+        - t
+        - s
+      additionalProperties: false
+    Heartbeat:
+      title: Heartbeat
+      description: >
+        Heartbeat messages are sent approximately once every second in the
+        absence of any other channel updates.
+      type: object
+      properties:
+        c:
+          type: string
+          enum:
+            - heartbeat
+          example: heartbeat
+      required:
+        - c
+      additionalProperties: false
+    CandleInterval:
+      type: string
+      description: Candle interval.
+      enum:
+        - 1M
+        - 5M
+        - 15M
+        - 30M
+        - 1H
+        - 4H
+        - D
+        - W
+        - M
+      example: 1H
+    CandlesChannel:
+      type: string
+      description: Channel name (will always be `ohlc`).
+      enum:
+        - ohlc
+      example: ohlc
+    Candles:
+      title: Candles
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/CandlesChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candle'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    Candle:
+      title: Candle
+      type: object
+      properties:
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        i:
+          $ref: '#/components/schemas/CandleInterval'
+        t:
+          description: Bar start time (microseconds since the Unix epoch).
+          type: number
+          example: 1778942400
+        o:
+          description: Open price.
+          type: number
+          example: 1.12345
+        h:
+          description: High price.
+          type: number
+          example: 1.1237
+        l:
+          description: Low price.
+          type: number
+          example: 1.1212
+        c:
+          description: Close price.
+          type: number
+          example: 1.12346
+        v:
+          description: Volume.
+          type: number
+          example: 120
+      required:
+        - s
+        - i
+        - t
+        - o
+        - h
+        - l
+        - c
+        - v
+      additionalProperties: false
+    CandlesSubscribeRequest:
+      title: CandlesSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/CandlesChannel'
+        p:
+          type: object
+          properties:
+            i:
+              $ref: '#/components/schemas/CandleInterval'
+            s:
+              $ref: '#/components/schemas/SymbolName'
+            snapshot:
+              description: If `true`, the last candle will be included in snapshot.
+              type: boolean
+              default: false
+              example: false
+          required:
+            - i
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    CandlesUnsubscribeRequest:
+      title: CandlesUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/CandlesChannel'
+        p:
+          type: object
+          properties:
+            i:
+              $ref: '#/components/schemas/CandleInterval'
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - i
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    CandlesSubscriptionRequestAck:
+      title: CandlesSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/CandlesChannel'
+        p:
+          type: object
+          properties:
+            i:
+              $ref: '#/components/schemas/CandleInterval'
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - i
+            - s
+          additionalProperties: false
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - s
+      additionalProperties: false
+    Quote:
+      title: Quote
+      type: object
+      properties:
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        bp:
+          description: Best bid price.
+          type: number
+          example: 1.13834
+        bs:
+          description: Best bid size.
+          type: number
+          example: 500000
+        ap:
+          description: Best ask price.
+          type: number
+          example: 1.13836
+        as:
+          description: Best ask size.
+          type: number
+          example: 500000
+        t:
+          description: Timestamp (microseconds since the Unix epoch).
+          type: number
+          example: 1778942400000000
+      required:
+        - s
+        - bp
+        - bs
+        - ap
+        - as
+        - t
+      additionalProperties: false
+    QuotesChannel:
+      type: string
+      description: Channel name (will always be `L1`).
+      enum:
+        - L1
+      example: L1
+    Quotes:
+      title: Quotes
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/QuotesChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quote'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    QuoteSubscribeRequest:
+      title: QuoteSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/QuotesChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+            streaming:
+              description: If `true`, snapshot + updates stream, if 'false' - only snapshot will be provided.
+              type: boolean
+              default: false
+              example: false
+          required:
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    QuoteUnsubscribeRequest:
+      title: QuoteUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/QuotesChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    QuoteSubscriptionRequestAck:
+      title: QuoteSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/QuotesChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - s
+          additionalProperties: false
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - s
+      additionalProperties: false
+    BookItem:
+      title: BookItem
+      type: object
+      description: Depth of market for an instrument.
+      properties:
+        a:
+          description: >-
+            Asks - array of arrays with two numeric elements (price and volume).
+            Sorted by `price` in ascending order.
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceBand'
+        b:
+          description: >-
+            Bids - array of arrays with two numeric elements (price and volume).
+            Sorted by `price` in descending order.
+          type: array
+          items:
+            $ref: '#/components/schemas/PriceBand'
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        t:
+          description: Timestamp (microseconds since the Unix epoch).
+          type: number
+          example: 1778942400000000
+      required:
+        - s
+        - t
+      additionalProperties: false
+      example:
+        a:
+          - - 45.1
+            - 100
+          - - 48.4
+            - 120
+        b:
+          - - 24.7
+            - 80
+          - - 35.6
+            - 30
+        s: EURUSD
+        t: 1778942400000000
+    PriceBand:
+      title: PriceBand
+      type: array
+      description: Array with two numeric elements - price and volume.
+      items:
+        type: number
+        minItems: 2
+        maxItems: 2
+    BookChannel:
+      type: string
+      description: Channel name (will always be `L2`).
+      enum:
+        - L2
+      example: L2
+    BookItems:
+      title: BookItems
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/BookChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookItem'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
+    BookSubscribeRequest:
+      title: BookSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/BookChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+            d:
+              description: The number of price levels to be received.
+              type: number
+              enum:
+                - 5
+                - 10
+                - 25
+                - 100
+                - 250
+                - 1000
+              example: 10
+            streaming:
+              description: If `true`, snapshot + updates stream, if 'false' - only snapshot will be provided.
+              type: boolean
+              default: false
+              example: false
+          required:
+            - s
+            - d
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    BookUnsubscribeRequest:
+      title: BookUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/BookChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+            d:
+              description: The number of price levels to be unsubscribed.
+              type: number
+              enum:
+                - 5
+                - 10
+                - 25
+                - 100
+                - 250
+                - 1000
+              example: 10
+          required:
+            - s
+            - d
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    BookSubscriptionRequestAck:
+      title: BookSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/BookChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - s
+          additionalProperties: false
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - s
+      additionalProperties: false
+    Status:
+      title: Status
+      description: Status (`true` - success, `false` - failure).
+      type: boolean
+      example: false
+    Ping:
+      title: Ping
+      type: object
+      properties:
+        m:
+          type: string
+          enum:
+            - ping
+          example: ping
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - h
+      additionalProperties: false
+    Pong:
+      title: Pong
+      type: object
+      properties:
+        m:
+          type: string
+          enum:
+            - pong
+          example: pong
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+      additionalProperties: false
+    CommonHeaders:
+      title: CommonHeaders
+      type: object
+      properties:
+        X-YB-API-Key:
+          type: string
+          description: API key
+          example: vJJErCZDZBD07z1p4Ed91t0qob6bAL
+        X-YB-LOCALE:
+          $ref: '#/components/schemas/Locale'
+      additionalProperties: false
+      required:
+        - X-YB-API-Key
+    Error:
+      title: Error
+      type: object
+      properties:
+        code:
+          type: number
+          description: Error code number
+          example: 10
+        msg:
+          type: string
+          example: Symbol not found
+          description: A short, human-readable localised summary of the problem type.
+        detail:
+          type: string
+          example: EURUSD
+          description: >-
+            A human-readable explanation specific to this occurrence of the
+            problem.
+      required:
+        - code
+        - msg
+      additionalProperties: false
+    TradeType:
+      type: string
+      enum:
+        - In
+        - Out
+        - InOut
+      example: 'In'
