@@ -21,7 +21,7 @@ import { isAuthenticated, signOut, getUserCredentials } from './utils/auth.js';
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
 
-const logger = createLogger({ prefix: '[App]' });
+const logger = createLogger({ prefix: '[App]' }); 
 
 /**
  * Check if we're on the signin page
