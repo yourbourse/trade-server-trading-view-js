@@ -3,7 +3,7 @@ import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../s
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
 import { handleApiError } from '@/utils/apiError';
-import { Side, OrderType, ParentType } from '../types';
+import { Side, OrderType, OrderStatus, ParentType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
@@ -31,68 +31,71 @@ export class OrderService {
 
     /**
      * Ensure cached orders include bracket lines for position SL/TP stored on the position itself.
+     *
+     * The synthesized order IDs match the format used by `enrichPositionBracketOrders` in
+     * `type-mappings.ts` so that later snapshot updates replace (rather than duplicate) the
+     * locally-synthesized bracket orders.
      */
     ensurePositionBracketOrders(position: Position): Order[] {
+        const positionIdNumber = parseInt(position.id, 10);
+        if (Number.isNaN(positionIdNumber)) {
+            return [];
+        }
+
         const parentId = position.id;
         const oppositeSide = position.side === Side.Buy ? Side.Sell : Side.Buy;
-        const orders = [...this.cachedOrders];
         const added: Order[] = [];
 
-        const hasStop = orders.some(
-            (order) =>
-                (order as Order & { parentId?: string; parentType?: number }).parentId === parentId &&
-                (order as Order & { parentType?: number }).parentType === ParentType.Position &&
-                order.type === OrderType.Stop
-        );
-        const hasTakeProfit = orders.some(
-            (order) =>
-                (order as Order & { parentId?: string; parentType?: number }).parentId === parentId &&
-                (order as Order & { parentType?: number }).parentType === ParentType.Position &&
-                order.type === OrderType.Limit
-        );
+        const isBracketFor = (order: Order, type: OrderType): boolean => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === parentId &&
+                bracket.parentType === ParentType.Position &&
+                order.type === type
+            );
+        };
+
+        const hasStop = this.cachedOrders.some((order) => isBracketFor(order, OrderType.Stop));
+        const hasTakeProfit = this.cachedOrders.some((order) => isBracketFor(order, OrderType.Limit));
 
         if (position.stopLoss !== undefined && !hasStop) {
-            const stopOrder = {
-                id: `-${parentId}-sl`,
+            added.push({
+                id: (-(positionIdNumber * 10 + 1)).toString(),
                 symbol: position.symbol,
                 brokerSymbol: position.brokerSymbol ?? position.symbol,
                 type: OrderType.Stop,
                 side: oppositeSide,
                 qty: position.qty,
-                status: 6,
+                status: OrderStatus.Working,
                 stopPrice: position.stopLoss,
                 parentId,
                 parentType: ParentType.Position,
                 avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
-            } as Order;
-            orders.push(stopOrder);
-            added.push(stopOrder);
+            } as Order);
         }
 
         if (position.takeProfit !== undefined && !hasTakeProfit) {
-            const tpOrder = {
-                id: `-${parentId}-tp`,
+            added.push({
+                id: (-(positionIdNumber * 10 + 2)).toString(),
                 symbol: position.symbol,
                 brokerSymbol: position.brokerSymbol ?? position.symbol,
                 type: OrderType.Limit,
                 side: oppositeSide,
                 qty: position.qty,
-                status: 6,
+                status: OrderStatus.Working,
                 limitPrice: position.takeProfit,
                 parentId,
                 parentType: ParentType.Position,
                 avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
-            } as Order;
-            orders.push(tpOrder);
-            added.push(tpOrder);
+            } as Order);
         }
 
         if (added.length > 0) {
-            this.cachedOrders = orders;
+            this.cachedOrders = [...this.cachedOrders, ...added];
         }
 
         return added;

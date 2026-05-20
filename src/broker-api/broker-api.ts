@@ -3,6 +3,8 @@ import {
     AccountManagerInfo,
     AccountMetainfo,
     ActionMetaInfo,
+    Brackets,
+    CustomInputFieldsValues,
     DefaultContextMenuActionsParams,
     Execution,
     IBrokerConnectionAdapterHost,
@@ -199,65 +201,65 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async editPositionBrackets(
         positionId: string,
-        brackets: { stopLoss?: number; takeProfit?: number },
-        _customFields?: Record<string, unknown>,
-        _instant?: boolean
-    ): Promise<boolean> {
+        brackets: Brackets,
+        _customFields?: CustomInputFieldsValues
+    ): Promise<void> {
         void _customFields;
-        void _instant;
 
         await this.positionService.editPositionBrackets(positionId, brackets);
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
-        if (updatedPosition) {
-            this.host.positionUpdate(updatedPosition);
-
-            const addedOrders = this.orderService.ensurePositionBracketOrders(updatedPosition);
-            addedOrders.forEach((order) => {
-                if (this.host.orderUpdate) {
-                    this.host.orderUpdate(order);
-                }
-            });
-        }
-
-        this.syncPositionBracketOrders(positionId);
-
-        return true;
-    }
-
-    private syncPositionBracketOrders(positionId: string): void {
-        const position = this.positionService.getCachedPositions().find((p) => p.id === positionId);
-        if (!position) {
+        if (!updatedPosition) {
             return;
         }
 
+        this.host.positionUpdate(updatedPosition);
+
+        const addedOrders = this.orderService.ensurePositionBracketOrders(updatedPosition);
+        const addedIds = new Set(addedOrders.map((order) => order.id));
+        addedOrders.forEach((order) => this.host.orderUpdate?.(order));
+
+        this.syncExistingBracketOrders(updatedPosition, addedIds);
+    }
+
+    /**
+     * Update prices on cached bracket orders to reflect the position's current SL/TP.
+     * Skips orders that were just synthesized (they have already been notified).
+     */
+    private syncExistingBracketOrders(position: Position, skipIds: Set<string>): void {
         const orders = this.orderService.getCachedOrders();
-        let hasUpdates = false;
+        let cacheChanged = false;
 
         const updatedOrders = orders.map((order) => {
-            const bracketOrder = order as Order & { parentId?: string; parentType?: number };
-            if (bracketOrder.parentId !== positionId || bracketOrder.parentType !== ParentType.Position) {
+            if (skipIds.has(order.id)) {
+                return order;
+            }
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            if (bracket.parentId !== position.id || bracket.parentType !== ParentType.Position) {
                 return order;
             }
 
-            hasUpdates = true;
-            const updated: Order = { ...order };
+            let nextStopPrice = order.stopPrice;
+            let nextLimitPrice = order.limitPrice;
 
             if (order.type === OrderType.Stop && position.stopLoss !== undefined) {
-                updated.stopPrice = position.stopLoss;
+                nextStopPrice = position.stopLoss;
             }
             if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
-                updated.limitPrice = position.takeProfit;
+                nextLimitPrice = position.takeProfit;
             }
 
-            if (this.host.orderUpdate) {
-                this.host.orderUpdate(updated);
+            if (nextStopPrice === order.stopPrice && nextLimitPrice === order.limitPrice) {
+                return order;
             }
 
+            cacheChanged = true;
+            const updated: Order = { ...order, stopPrice: nextStopPrice, limitPrice: nextLimitPrice };
+            this.host.orderUpdate?.(updated);
             return updated;
         });
 
-        if (hasUpdates) {
+        if (cacheChanged) {
             this.orderService.setCachedOrders(updatedOrders);
         }
     }
