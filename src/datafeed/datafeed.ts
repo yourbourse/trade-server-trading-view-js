@@ -328,8 +328,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         if (candleCallback) {
             try {
                 this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
-            } catch {
-                // wsClient torn down — nothing to unhook.
+            } catch (error: unknown) {
+                logger.debug('unsubscribeBars: local subscription already torn down or unavailable', error);
             }
         }
 
