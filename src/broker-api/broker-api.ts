@@ -176,9 +176,26 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async editPositionBrackets(
         positionId: string,
-        brackets: { stopLoss?: number; takeProfit?: number }
+        brackets: { stopLoss?: number; takeProfit?: number },
+        _customFields?: Record<string, unknown>
     ): Promise<void> {
+        void _customFields;
         await this.positionService.editPositionBrackets(positionId, brackets);
+
+        const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
+        if (updatedPosition) {
+            this.host.positionUpdate(updatedPosition);
+        }
+    }
+
+    public subscribeEquity(): void {
+        this.accountService.setEquityUpdateSubscribed(true);
+        const equity = this.accountService.getEquity();
+        setTimeout(() => this.host.equityUpdate(equity), 5);
+    }
+
+    public unsubscribeEquity(): void {
+        this.accountService.setEquityUpdateSubscribed(false);
     }
 
     public async cancelOrder(orderId: string): Promise<void> {

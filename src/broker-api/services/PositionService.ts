@@ -61,6 +61,18 @@ export class PositionService {
                 brackets.takeProfit ?? null
             );
 
+            const index = this.cachedPositions.findIndex((p) => p.id === positionId);
+            if (index >= 0) {
+                const updated = { ...this.cachedPositions[index]! };
+                if (brackets.stopLoss !== undefined) {
+                    updated.stopLoss = brackets.stopLoss;
+                }
+                if (brackets.takeProfit !== undefined) {
+                    updated.takeProfit = brackets.takeProfit;
+                }
+                this.cachedPositions[index] = updated;
+            }
+
             logger.info('Position brackets modified successfully:', positionId);
         } catch (error) {
             handleApiError(error, 'Error modifying position brackets');
