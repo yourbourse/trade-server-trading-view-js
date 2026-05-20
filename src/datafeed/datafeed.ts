@@ -30,8 +30,6 @@ const logger = createLogger({ prefix: '[Datafeed]' });
 
 interface QuoteSubscription {
     symbols: string[];
-    fastSymbols: string[];
-    callback: QuotesCallback;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     wsCallback: (data: any) => void;
 }
@@ -405,12 +403,12 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     ): void {
         logger.debug('subscribeQuotes:', { symbols, fastSymbols, listenerGUID });
 
-        const allSymbols = [...new Set([...symbols, ...fastSymbols])];
+        const dedupedSymbols = [...new Set([...symbols, ...fastSymbols])];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const wsCallback = (data: any) => {
             const { quote } = data;
-            if (!quote || !allSymbols.includes(quote.s)) {
+            if (!quote || !dedupedSymbols.includes(quote.s)) {
                 return;
             }
 
@@ -436,16 +434,27 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         };
 
         this.quoteSubscriptions.set(listenerGUID, {
-            symbols,
-            fastSymbols,
-            callback: onRealtimeCallback,
+            symbols: dedupedSymbols,
             wsCallback,
         });
 
         this.api.subscriptions.subscribe('quotes', wsCallback);
         this.api.subscriptions.subscribe('ticker', wsCallback);
 
-        logger.info(`Subscribed to quotes for ${allSymbols.length} symbols`);
+        // Ask the server to start streaming L1 (top-of-book) for each symbol.
+        // Without this, the local 'quotes'/'ticker' bus would never fire.
+        dedupedSymbols.forEach((symbol) => {
+            this.api
+                .subscribeToQuotes(symbol, true)
+                .then(() => {
+                    logger.info(`Subscribed to L1: ${symbol}`);
+                })
+                .catch((error: unknown) => {
+                    logger.error(`Failed to subscribe to L1: ${symbol}`, error);
+                });
+        });
+
+        logger.info(`Subscribed to quotes for ${dedupedSymbols.length} symbols`);
     }
 
     /**
@@ -459,9 +468,25 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             return;
         }
 
+        this.quoteSubscriptions.delete(listenerGUID);
+
+        // TV can call this during widget destroy, after the WS has already
+        // been torn down. Skip remote cleanup in that case.
+        if (!this.api.isConnected()) {
+            logger.debug('unsubscribeQuotes: WS already disconnected, skipping remote cleanup');
+            return;
+        }
+
         this.api.subscriptions.unsubscribe('quotes', subscription.wsCallback);
         this.api.subscriptions.unsubscribe('ticker', subscription.wsCallback);
-        this.quoteSubscriptions.delete(listenerGUID);
+
+        subscription.symbols.forEach((symbol) => {
+            this.api
+                .unsubscribeFromQuotes(symbol)
+                .catch((error: unknown) => {
+                    logger.error(`Failed to unsubscribe from L1: ${symbol}`, error);
+                });
+        });
 
         logger.info(`Unsubscribed from quotes for listener ${listenerGUID}`);
     }
