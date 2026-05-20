@@ -156,6 +156,18 @@ export class TradeServerClient {
     }
 
     /**
+     * Register a callback fired after the WebSocket auto-reconnects.
+     * Returns a disposer that removes the listener.
+     * Must be called after connect() — throws otherwise.
+     */
+    onReconnect(cb: () => void): () => void {
+        if (!this.wsClient) {
+            throw new Error('WebSocket not connected. Call connect() first.');
+        }
+        return this.wsClient.onReconnect(cb);
+    }
+
+    /**
      * Auto-subscribe to configured channels
      */
     private async autoSubscribe(): Promise<void> {
