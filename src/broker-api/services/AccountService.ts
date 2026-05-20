@@ -15,8 +15,15 @@ import type {
 } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { StandardFormatterName } from '../types';
-import { ordersPageColumns, positionsPageColumns, accountProfileColumns, transferHistoryColumns } from '../columns';
+import {
+    ordersPageColumns,
+    positionsPageColumns,
+    accountProfileColumns,
+    transferHistoryColumns,
+    tradeHistoryColumns,
+} from '../columns';
 import { formatTimestamp } from '../type-mappings';
+import { TradeHistoryService } from './TradeHistoryService.js';
 import CONFIG from '@/config';
 import { deriveServerUrls } from '@/utils/serverUrl.js';
 import { createLogger } from '@/utils/logger.js';
@@ -33,6 +40,7 @@ interface AccountManagerData {
 export class AccountService {
     private api: TradeServerClient;
     private host: IBrokerConnectionAdapterHost;
+    private tradeHistoryService: TradeHistoryService;
 
     private readonly accountManagerData: AccountManagerData = {
         title: 'Demo account',
@@ -60,10 +68,21 @@ export class AccountService {
         currency: string;
         comment: string;
     }> = [];
+    private tradeHistoryData: Array<{
+        id: string;
+        symbol: string;
+        side: number;
+        qty: number;
+        avgPrice: number;
+        pl: number;
+        time: string;
+        orderId: string;
+    }> = [];
 
-    constructor(api: TradeServerClient, host: IBrokerConnectionAdapterHost) {
+    constructor(api: TradeServerClient, host: IBrokerConnectionAdapterHost, tradeHistoryService: TradeHistoryService) {
         this.api = api;
         this.host = host;
+        this.tradeHistoryService = tradeHistoryService;
 
         this.balanceWatchedValue = this.host.factory.createWatchedValue(this.accountManagerData.balance);
         this.equityWatchedValue = this.host.factory.createWatchedValue(this.accountManagerData.equity);
@@ -249,12 +268,29 @@ export class AccountService {
             tables: [transferHistoryTable],
         };
 
+        const tradeHistoryTable: AccountManagerTable = {
+            id: 'tradeHistory',
+            columns: tradeHistoryColumns,
+            getData: async () => {
+                logger.debug('getData() called for trade history table');
+                await this.loadTradeHistoryData();
+                return this.tradeHistoryData;
+            },
+            changeDelegate: this.accountDetailsChangeDelegate,
+        };
+
+        const tradeHistoryPage: AccountManagerPage = {
+            id: 'tradeHistory',
+            title: 'Trade History',
+            tables: [tradeHistoryTable],
+        };
+
         return {
             accountTitle: 'Trading Account',
             summary: summaryFields,
             orderColumns: ordersPageColumns,
             positionColumns: positionsPageColumns,
-            pages: [accountPage, transferHistoryPage],
+            pages: [accountPage, tradeHistoryPage, transferHistoryPage],
         };
     }
 
@@ -290,6 +326,17 @@ export class AccountService {
                     value: 'Failed to load account profile',
                 },
             ];
+        }
+    }
+
+    private async loadTradeHistoryData(): Promise<void> {
+        try {
+            logger.debug('Loading trade history table data...');
+            this.tradeHistoryData = await this.tradeHistoryService.getTradeHistoryRows();
+            logger.info('Trade history loaded:', this.tradeHistoryData.length, 'trades');
+        } catch (error) {
+            logger.error('Error loading trade history:', error);
+            this.tradeHistoryData = [];
         }
     }
 

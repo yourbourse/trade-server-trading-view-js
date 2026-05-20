@@ -1,5 +1,5 @@
 /**
- * This file defines the structure of the Account Manager pages: "Orders", "Positions", and "Account Summary".
+ * This file defines the structure of the Account Manager pages: "Orders", "Positions", "Trade History", and "Account Summary".
  * Each Account Manager page is a table, where each column is an `AccountManagerColumnBase` object.
  * These objects are used in the `accountManagerInfo` method which builds the Account Manager.
  */
@@ -155,6 +155,68 @@ export const positionsPageColumns: AccountManagerColumn[] = [
         id: 'takeProfit',
         dataFields: ['takeProfit'],
         formatter: 'formatPrice' as StandardFormatterName,
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+] as any;
+
+/**
+ * Column structure for the "Trade History" page
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const tradeHistoryColumns: AccountManagerColumn[] = [
+    {
+        label: 'Symbol',
+        formatter: 'symbol' as StandardFormatterName,
+        id: CommonAccountManagerColumnId.Symbol,
+        dataFields: ['symbol', 'symbol', 'message'],
+    },
+    {
+        label: 'Side',
+        id: 'side',
+        dataFields: ['side'],
+        formatter: 'side' as StandardFormatterName,
+    },
+    {
+        label: 'Qty',
+        alignment: 'right',
+        id: 'qty',
+        dataFields: ['qty'],
+        help: 'Size in lots',
+        formatter: 'formatQuantity' as StandardFormatterName,
+    },
+    {
+        label: 'Fill Price',
+        alignment: 'right',
+        id: 'avgPrice',
+        dataFields: ['avgPrice'],
+        formatter: 'formatPrice' as StandardFormatterName,
+    },
+    {
+        label: 'Profit',
+        alignment: 'right',
+        id: 'pl',
+        dataFields: ['pl'],
+        formatter: 'profit' as StandardFormatterName,
+    },
+    {
+        label: 'Date/Time',
+        id: 'time',
+        dataFields: ['time'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Order ID',
+        alignment: 'right',
+        id: 'orderId',
+        dataFields: ['orderId'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Trade ID',
+        alignment: 'right',
+        id: 'id',
+        dataFields: ['id'],
+        formatter: 'text' as StandardFormatterName,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
