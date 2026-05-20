@@ -1,7 +1,7 @@
 import { IBrokerConnectionAdapterHost, Order, Position } from '../../../charting_library/charting_library';
 import type { Order as TradeServerOrder, Position as TradeServerPosition, AccountState } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
-import { transformOrders, transformPositions } from '../type-mappings';
+import { enrichPositionBracketOrders, transformOrders, transformPositions } from '../type-mappings';
 import { OrderStatus } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -66,9 +66,8 @@ export class UpdateService {
         let hasTerminalOrders = false;
 
         if (type === 's') {
-            const newOrders = transformOrders(orders) as Order[];
-            this.onOrderCacheUpdate(newOrders);
-            ordersToNotify.push(...newOrders);
+            void this.applyEnrichedOrderSnapshot(orders);
+            return;
         } else if (type === 'u') {
             const updatedOrders = transformOrders(orders) as Order[];
             updatedOrders.forEach((order) => {
@@ -193,6 +192,32 @@ export class UpdateService {
         }
 
         this.onRecalculateAMData();
+    }
+
+    private async applyEnrichedOrderSnapshot(orders: TradeServerOrder[]): Promise<void> {
+        try {
+            const positionsData = await this.api.trading.getPositions({});
+            const positions = positionsData?.positions || [];
+            const enrichedOrders = enrichPositionBracketOrders(orders, positions);
+            const newOrders = transformOrders(enrichedOrders) as Order[];
+
+            this.onOrderCacheUpdate(newOrders);
+
+            if (this.host?.orderUpdate) {
+                newOrders.forEach((order) => {
+                    this.host?.orderUpdate?.(order);
+                });
+            }
+        } catch (error) {
+            logger.error('Failed to enrich order snapshot:', error);
+            const newOrders = transformOrders(orders) as Order[];
+            this.onOrderCacheUpdate(newOrders);
+            if (this.host?.orderUpdate) {
+                newOrders.forEach((order) => {
+                    this.host?.orderUpdate?.(order);
+                });
+            }
+        }
     }
 
     private handleAccountStateUpdate(data: { data: AccountState[] }): void {

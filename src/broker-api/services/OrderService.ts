@@ -1,9 +1,9 @@
-import { Order, PlaceOrderResult, PreOrder } from '../../../charting_library/charting_library';
+import { Order, PlaceOrderResult, Position, PreOrder } from '../../../charting_library/charting_library';
 import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
-import { transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
+import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
 import { handleApiError } from '@/utils/apiError';
-import { Side } from '../types';
+import { Side, OrderType, ParentType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
@@ -29,6 +29,75 @@ export class OrderService {
         this.cachedOrders = [];
     }
 
+    /**
+     * Ensure cached orders include bracket lines for position SL/TP stored on the position itself.
+     */
+    ensurePositionBracketOrders(position: Position): Order[] {
+        const parentId = position.id;
+        const oppositeSide = position.side === Side.Buy ? Side.Sell : Side.Buy;
+        const orders = [...this.cachedOrders];
+        const added: Order[] = [];
+
+        const hasStop = orders.some(
+            (order) =>
+                (order as Order & { parentId?: string; parentType?: number }).parentId === parentId &&
+                (order as Order & { parentType?: number }).parentType === ParentType.Position &&
+                order.type === OrderType.Stop
+        );
+        const hasTakeProfit = orders.some(
+            (order) =>
+                (order as Order & { parentId?: string; parentType?: number }).parentId === parentId &&
+                (order as Order & { parentType?: number }).parentType === ParentType.Position &&
+                order.type === OrderType.Limit
+        );
+
+        if (position.stopLoss !== undefined && !hasStop) {
+            const stopOrder = {
+                id: `-${parentId}-sl`,
+                symbol: position.symbol,
+                brokerSymbol: position.brokerSymbol ?? position.symbol,
+                type: OrderType.Stop,
+                side: oppositeSide,
+                qty: position.qty,
+                status: 6,
+                stopPrice: position.stopLoss,
+                parentId,
+                parentType: ParentType.Position,
+                avg: 0,
+                filledQty: 0,
+                duration: { type: 'gtc' },
+            } as Order;
+            orders.push(stopOrder);
+            added.push(stopOrder);
+        }
+
+        if (position.takeProfit !== undefined && !hasTakeProfit) {
+            const tpOrder = {
+                id: `-${parentId}-tp`,
+                symbol: position.symbol,
+                brokerSymbol: position.brokerSymbol ?? position.symbol,
+                type: OrderType.Limit,
+                side: oppositeSide,
+                qty: position.qty,
+                status: 6,
+                limitPrice: position.takeProfit,
+                parentId,
+                parentType: ParentType.Position,
+                avg: 0,
+                filledQty: 0,
+                duration: { type: 'gtc' },
+            } as Order;
+            orders.push(tpOrder);
+            added.push(tpOrder);
+        }
+
+        if (added.length > 0) {
+            this.cachedOrders = orders;
+        }
+
+        return added;
+    }
+
     async getAllOrders(): Promise<Order[]> {
         logger.debug('getAllOrders');
 
@@ -46,7 +115,11 @@ export class OrderService {
             const historicalOrdersList = historicalOrders || [];
             const allOrders = [...workingOrdersList, ...historicalOrdersList];
 
-            this.cachedOrders = transformOrders(allOrders) as Order[];
+            const positionsData = await this.api.trading.getPositions({});
+            const positions = positionsData?.positions || [];
+            const ordersWithPositionBrackets = enrichPositionBracketOrders(allOrders, positions);
+
+            this.cachedOrders = transformOrders(ordersWithPositionBrackets) as Order[];
 
             logger.info('Fetched ALL orders (with pagination):', {
                 workingCount: workingOrdersList.length,

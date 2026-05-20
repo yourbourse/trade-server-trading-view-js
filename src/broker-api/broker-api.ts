@@ -18,7 +18,7 @@ import {
 import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
-import { ConnectionStatus, Side } from './types';
+import { ConnectionStatus, OrderType, ParentType, Side } from './types';
 import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
@@ -171,20 +171,94 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {
         void _confirmId;
+
+        const bracketOrder = order as Order & { parentId?: string; parentType?: number };
+        if (
+            bracketOrder.parentType === ParentType.Position &&
+            bracketOrder.parentId &&
+            (order.stopPrice !== undefined || order.limitPrice !== undefined)
+        ) {
+            const brackets: { stopLoss?: number; takeProfit?: number } = {};
+            if (order.stopPrice !== undefined) {
+                brackets.stopLoss = order.stopPrice;
+            }
+            if (order.limitPrice !== undefined) {
+                brackets.takeProfit = order.limitPrice;
+            }
+            await this.editPositionBrackets(bracketOrder.parentId, brackets);
+            return;
+        }
+
         await this.orderService.modifyOrder(order);
+
+        const cachedOrder = this.orderService.getCachedOrders().find((o) => o.id === order.id);
+        if (cachedOrder && this.host.orderUpdate) {
+            this.host.orderUpdate(cachedOrder);
+        }
     }
 
     public async editPositionBrackets(
         positionId: string,
         brackets: { stopLoss?: number; takeProfit?: number },
-        _customFields?: Record<string, unknown>
-    ): Promise<void> {
+        _customFields?: Record<string, unknown>,
+        _instant?: boolean
+    ): Promise<boolean> {
         void _customFields;
+        void _instant;
+
         await this.positionService.editPositionBrackets(positionId, brackets);
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (updatedPosition) {
             this.host.positionUpdate(updatedPosition);
+
+            const addedOrders = this.orderService.ensurePositionBracketOrders(updatedPosition);
+            addedOrders.forEach((order) => {
+                if (this.host.orderUpdate) {
+                    this.host.orderUpdate(order);
+                }
+            });
+        }
+
+        this.syncPositionBracketOrders(positionId);
+
+        return true;
+    }
+
+    private syncPositionBracketOrders(positionId: string): void {
+        const position = this.positionService.getCachedPositions().find((p) => p.id === positionId);
+        if (!position) {
+            return;
+        }
+
+        const orders = this.orderService.getCachedOrders();
+        let hasUpdates = false;
+
+        const updatedOrders = orders.map((order) => {
+            const bracketOrder = order as Order & { parentId?: string; parentType?: number };
+            if (bracketOrder.parentId !== positionId || bracketOrder.parentType !== ParentType.Position) {
+                return order;
+            }
+
+            hasUpdates = true;
+            const updated: Order = { ...order };
+
+            if (order.type === OrderType.Stop && position.stopLoss !== undefined) {
+                updated.stopPrice = position.stopLoss;
+            }
+            if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
+                updated.limitPrice = position.takeProfit;
+            }
+
+            if (this.host.orderUpdate) {
+                this.host.orderUpdate(updated);
+            }
+
+            return updated;
+        });
+
+        if (hasUpdates) {
+            this.orderService.setCachedOrders(updatedOrders);
         }
     }
 
