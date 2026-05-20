@@ -101,6 +101,80 @@ export class OrderService {
         return added;
     }
 
+    /**
+     * Keep position bracket order prices aligned with the position's SL/TP fields.
+     */
+    syncBracketOrdersFromPosition(position: Position): Order[] {
+        const changed: Order[] = [];
+
+        this.cachedOrders = this.cachedOrders.map((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            if (bracket.parentId !== position.id || bracket.parentType !== ParentType.Position) {
+                return order;
+            }
+
+            if (order.type === OrderType.Stop && position.stopLoss !== undefined && order.stopPrice !== position.stopLoss) {
+                const updated = { ...order, stopPrice: position.stopLoss };
+                changed.push(updated);
+                return updated;
+            }
+
+            if (
+                order.type === OrderType.Limit &&
+                position.takeProfit !== undefined &&
+                order.limitPrice !== position.takeProfit
+            ) {
+                const updated = { ...order, limitPrice: position.takeProfit };
+                changed.push(updated);
+                return updated;
+            }
+
+            return order;
+        });
+
+        return changed;
+    }
+
+    /**
+     * Merge a WebSocket order patch without losing position-bracket linkage or fresh SL/TP prices.
+     */
+    mergeWebSocketOrderUpdate(existing: Order | undefined, incoming: Order, positions: Position[]): Order {
+        let merged: Order = existing ? { ...existing, ...incoming } : { ...incoming };
+
+        const existingBracket = existing as (Order & { parentId?: string; parentType?: number }) | undefined;
+        if (existingBracket?.parentType === ParentType.Position && existingBracket.parentId) {
+            merged = {
+                ...merged,
+                parentId: existingBracket.parentId,
+                parentType: ParentType.Position,
+            };
+        }
+
+        return this.alignPositionBracketOrderWithPosition(merged, positions);
+    }
+
+    alignPositionBracketOrderWithPosition(order: Order, positions: Position[]): Order {
+        const bracket = order as Order & { parentId?: string; parentType?: number };
+        if (bracket.parentType !== ParentType.Position || !bracket.parentId) {
+            return order;
+        }
+
+        const position = positions.find((p) => p.id === bracket.parentId);
+        if (!position) {
+            return order;
+        }
+
+        if (order.type === OrderType.Stop && position.stopLoss !== undefined) {
+            return { ...order, stopPrice: position.stopLoss };
+        }
+
+        if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
+            return { ...order, limitPrice: position.takeProfit };
+        }
+
+        return order;
+    }
+
     async getAllOrders(): Promise<Order[]> {
         logger.debug('getAllOrders');
 

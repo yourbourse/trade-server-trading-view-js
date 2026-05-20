@@ -17,6 +17,9 @@ export class UpdateService {
     private onAccountStateUpdate: (data: { data: AccountState[] }) => void;
     private onRecalculateAMData: () => void;
     private onBracketActivation: (orderId: string) => Promise<void>;
+    private onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
+    private onApplyServerPositionUpdate: (incoming: Position) => Position;
+    private onSyncBracketOrdersFromPosition: (position: Position) => Order[];
 
     constructor(
         api: TradeServerClient,
@@ -29,6 +32,9 @@ export class UpdateService {
             onAccountStateUpdate: (data: { data: AccountState[] }) => void;
             onRecalculateAMData: () => void;
             onBracketActivation: (orderId: string) => Promise<void>;
+            onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
+            onApplyServerPositionUpdate: (incoming: Position) => Position;
+            onSyncBracketOrdersFromPosition: (position: Position) => Order[];
         }
     ) {
         this.api = api;
@@ -40,6 +46,9 @@ export class UpdateService {
         this.onAccountStateUpdate = callbacks.onAccountStateUpdate;
         this.onRecalculateAMData = callbacks.onRecalculateAMData;
         this.onBracketActivation = callbacks.onBracketActivation;
+        this.onMergeOrderUpdate = callbacks.onMergeOrderUpdate;
+        this.onApplyServerPositionUpdate = callbacks.onApplyServerPositionUpdate;
+        this.onSyncBracketOrdersFromPosition = callbacks.onSyncBracketOrdersFromPosition;
     }
 
     subscribeToUpdates(): void {
@@ -69,30 +78,34 @@ export class UpdateService {
             void this.applyEnrichedOrderSnapshot(orders);
             return;
         } else if (type === 'u') {
+            const cachedPositions = this.onGetCachedPositions();
             const updatedOrders = transformOrders(orders) as Order[];
             updatedOrders.forEach((order) => {
                 const index = cachedOrders.findIndex((o) => o.id === order.id);
+                const existing = index >= 0 ? cachedOrders[index] : undefined;
+                const merged = this.onMergeOrderUpdate(existing, order, cachedPositions);
+
                 if (index >= 0) {
-                    cachedOrders[index] = order;
+                    cachedOrders[index] = merged;
                 } else {
-                    cachedOrders.push(order);
+                    cachedOrders.push(merged);
                 }
 
                 if (
-                    order.status === OrderStatus.Filled ||
-                    order.status === OrderStatus.Canceled ||
-                    order.status === OrderStatus.Rejected
+                    merged.status === OrderStatus.Filled ||
+                    merged.status === OrderStatus.Canceled ||
+                    merged.status === OrderStatus.Rejected
                 ) {
                     hasTerminalOrders = true;
-                    logger.info('Order reached terminal status:', order.id, 'status:', order.status);
+                    logger.info('Order reached terminal status:', merged.id, 'status:', merged.status);
 
-                    if (order.status === OrderStatus.Filled) {
-                        this.onBracketActivation(order.id).catch((err) => {
+                    if (merged.status === OrderStatus.Filled) {
+                        this.onBracketActivation(merged.id).catch((err) => {
                             logger.error('Error activating brackets for filled order:', err);
                         });
                     }
                 } else {
-                    ordersToNotify.push(order);
+                    ordersToNotify.push(merged);
                 }
             });
         }
@@ -142,24 +155,35 @@ export class UpdateService {
                 } else {
                     const transformedPos = (transformPositions([pos]) as Position[])[0];
                     if (transformedPos) {
-                        if (transformedPos.qty === 0) {
+                        const hadSlTp =
+                            transformedPos.stopLoss !== undefined || transformedPos.takeProfit !== undefined;
+                        const protectedPos = this.onApplyServerPositionUpdate(transformedPos);
+
+                        if (protectedPos.qty === 0) {
                             hasClosedPositions = true;
 
-                            const index = cachedPositions.findIndex((p) => p.id === transformedPos.id);
+                            const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
                             if (index >= 0) {
-                                logger.debug('Removing closed position from cache:', transformedPos.id);
+                                logger.debug('Removing closed position from cache:', protectedPos.id);
                                 cachedPositions.splice(index, 1);
                             }
                         } else {
-                            const index = cachedPositions.findIndex((p) => p.id === transformedPos.id);
+                            const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
                             if (index >= 0) {
-                                cachedPositions[index] = transformedPos;
-                                logger.debug('Updated existing position:', transformedPos.id);
+                                cachedPositions[index] = protectedPos;
+                                logger.debug('Updated existing position:', protectedPos.id);
                             } else {
-                                cachedPositions.push(transformedPos);
-                                logger.debug('Added new position:', transformedPos.id);
+                                cachedPositions.push(protectedPos);
+                                logger.debug('Added new position:', protectedPos.id);
                             }
-                            positionsToNotify.push(transformedPos);
+                            positionsToNotify.push(protectedPos);
+
+                            if (hadSlTp) {
+                                const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
+                                syncedOrders.forEach((order) => {
+                                    this.host?.orderUpdate?.(order);
+                                });
+                            }
                         }
                     }
                 }

@@ -20,7 +20,7 @@ import {
 import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
-import { ConnectionStatus, OrderType, ParentType, Side } from './types';
+import { ConnectionStatus, ParentType, Side } from './types';
 import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
@@ -81,6 +81,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
             onAccountStateUpdate: (data) => this.accountService.handleAccountStateUpdate(data),
             onRecalculateAMData: () => this.accountService.recalculateAMData(this.positionService.getCachedPositions()),
             onBracketActivation: (orderId) => this.bracketService.activateBracketsForFilledOrder(orderId),
+            onMergeOrderUpdate: (existing, incoming, positions) =>
+                this.orderService.mergeWebSocketOrderUpdate(existing, incoming, positions),
+            onApplyServerPositionUpdate: (incoming) => this.positionService.applyServerPositionUpdate(incoming),
+            onSyncBracketOrdersFromPosition: (position) => this.orderService.syncBracketOrdersFromPosition(position),
         });
 
         this.accountService.initializeAccountData();
@@ -180,22 +184,23 @@ export class BrokerApi extends AbstractBrokerMinimal {
             bracketOrder.parentId &&
             (order.stopPrice !== undefined || order.limitPrice !== undefined)
         ) {
-            const brackets: { stopLoss?: number; takeProfit?: number } = {};
-            if (order.stopPrice !== undefined) {
-                brackets.stopLoss = order.stopPrice;
-            }
-            if (order.limitPrice !== undefined) {
-                brackets.takeProfit = order.limitPrice;
-            }
+            const position = this.positionService.getCachedPositions().find((p) => p.id === bracketOrder.parentId);
+            const brackets: Brackets = {
+                stopLoss: order.stopPrice ?? position?.stopLoss,
+                takeProfit: order.limitPrice ?? position?.takeProfit,
+            };
             await this.editPositionBrackets(bracketOrder.parentId, brackets);
             return;
         }
 
         await this.orderService.modifyOrder(order);
 
-        const cachedOrder = this.orderService.getCachedOrders().find((o) => o.id === order.id);
-        if (cachedOrder && this.host.orderUpdate) {
-            this.host.orderUpdate(cachedOrder);
+        const cachedOrders = this.orderService.getCachedOrders();
+        const index = cachedOrders.findIndex((o) => o.id === order.id);
+        if (index >= 0) {
+            cachedOrders[index] = { ...cachedOrders[index]!, ...order };
+            this.orderService.setCachedOrders(cachedOrders);
+            this.host.orderUpdate?.(cachedOrders[index]!);
         }
     }
 
@@ -216,52 +221,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
         this.host.positionUpdate(updatedPosition);
 
         const addedOrders = this.orderService.ensurePositionBracketOrders(updatedPosition);
-        const addedIds = new Set(addedOrders.map((order) => order.id));
         addedOrders.forEach((order) => this.host.orderUpdate?.(order));
 
-        this.syncExistingBracketOrders(updatedPosition, addedIds);
-    }
-
-    /**
-     * Update prices on cached bracket orders to reflect the position's current SL/TP.
-     * Skips orders that were just synthesized (they have already been notified).
-     */
-    private syncExistingBracketOrders(position: Position, skipIds: Set<string>): void {
-        const orders = this.orderService.getCachedOrders();
-        let cacheChanged = false;
-
-        const updatedOrders = orders.map((order) => {
-            if (skipIds.has(order.id)) {
-                return order;
-            }
-            const bracket = order as Order & { parentId?: string; parentType?: number };
-            if (bracket.parentId !== position.id || bracket.parentType !== ParentType.Position) {
-                return order;
-            }
-
-            let nextStopPrice = order.stopPrice;
-            let nextLimitPrice = order.limitPrice;
-
-            if (order.type === OrderType.Stop && position.stopLoss !== undefined) {
-                nextStopPrice = position.stopLoss;
-            }
-            if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
-                nextLimitPrice = position.takeProfit;
-            }
-
-            if (nextStopPrice === order.stopPrice && nextLimitPrice === order.limitPrice) {
-                return order;
-            }
-
-            cacheChanged = true;
-            const updated: Order = { ...order, stopPrice: nextStopPrice, limitPrice: nextLimitPrice };
-            this.host.orderUpdate?.(updated);
-            return updated;
-        });
-
-        if (cacheChanged) {
-            this.orderService.setCachedOrders(updatedOrders);
-        }
+        const syncedOrders = this.orderService.syncBracketOrdersFromPosition(updatedPosition);
+        syncedOrders.forEach((order) => this.host.orderUpdate?.(order));
     }
 
     public subscribeEquity(): void {
