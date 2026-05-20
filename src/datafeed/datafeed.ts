@@ -310,30 +310,36 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         logger.debug('unsubscribeBars:', subscriberUID);
 
         const subscriber = this.subscribers[subscriberUID];
-        if (subscriber) {
-            const { symbolInfo, resolution, candleCallback } = subscriber;
-
-            // Map TradingView resolution to API interval
-            const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
-
-            // Remove event listener first to stop receiving updates immediately
-            if (candleCallback) {
-                this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
-            }
-
-            // Delete subscriber before unsubscribing to prevent race conditions
-            delete this.subscribers[subscriberUID];
-
-            // Unsubscribe from candles
-            this.api
-                .unsubscribeFromCandles(symbolInfo.name, interval)
-                .then(() => {
-                    logger.info(`Unsubscribed from candles: ${symbolInfo.name} ${interval}`);
-                })
-                .catch((error: unknown) => {
-                    logger.error(`Failed to unsubscribe from candles:`, error);
-                });
+        if (!subscriber) {
+            return;
         }
+
+        const { symbolInfo, resolution, candleCallback } = subscriber;
+        delete this.subscribers[subscriberUID];
+
+        // TV may call this during widget destroy, after the WS has already
+        // been torn down. The `subscriptions` and `websocket` getters on
+        // TradeServerClient throw if wsClient is null — guard accordingly.
+        if (!this.api.isConnected()) {
+            logger.debug('unsubscribeBars: WS already disconnected, skipping remote cleanup');
+            return;
+        }
+
+        // Map TradingView resolution to API interval
+        const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
+
+        if (candleCallback) {
+            this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
+        }
+
+        this.api
+            .unsubscribeFromCandles(symbolInfo.name, interval)
+            .then(() => {
+                logger.info(`Unsubscribed from candles: ${symbolInfo.name} ${interval}`);
+            })
+            .catch((error: unknown) => {
+                logger.error(`Failed to unsubscribe from candles:`, error);
+            });
     }
 
     /**
