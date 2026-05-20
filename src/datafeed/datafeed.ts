@@ -317,19 +317,25 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         const { symbolInfo, resolution, candleCallback } = subscriber;
         delete this.subscribers[subscriberUID];
 
-        // TV may call this during widget destroy, after the WS has already
-        // been torn down. The `subscriptions` and `websocket` getters on
-        // TradeServerClient throw if wsClient is null — guard accordingly.
-        if (!this.api.isConnected()) {
-            logger.debug('unsubscribeBars: WS already disconnected, skipping remote cleanup');
-            return;
-        }
-
-        // Map TradingView resolution to API interval
         const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
 
+        // Unhook the local pub/sub callback unconditionally. During a transient
+        // disconnect (auto-reconnect mid-flight) wsClient still exists and the
+        // SubscriptionManager is live — if we skipped this, the callback would
+        // resume firing on a destroyed widget once reconnect lands. The getter
+        // throws only when wsClient is null (post-disconnect), which we treat
+        // as already-cleaned-up.
         if (candleCallback) {
-            this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
+            try {
+                this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
+            } catch {
+                // wsClient torn down — nothing to unhook.
+            }
+        }
+
+        if (!this.api.isConnected()) {
+            logger.debug('unsubscribeBars: WS not connected, skipping wire unsubscribe');
+            return;
         }
 
         this.api
@@ -482,16 +488,18 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
 
         this.quoteSubscriptions.delete(listenerGUID);
 
-        // TV can call this during widget destroy, after the WS has already
-        // been torn down. Skip remote cleanup in that case.
-        if (!this.api.isConnected()) {
-            logger.debug('unsubscribeQuotes: WS already disconnected, skipping remote cleanup');
-            return;
+        // Unhook locals unconditionally so the callback can't resume firing on
+        // a destroyed widget if reconnect lands after this call. Throws only
+        // when wsClient is null (post-disconnect), which means nothing to do.
+        try {
+            this.api.subscriptions.unsubscribe('quotes', subscription.wsCallback);
+            this.api.subscriptions.unsubscribe('ticker', subscription.wsCallback);
+        } catch {
+            // wsClient torn down — nothing to unhook.
         }
 
-        this.api.subscriptions.unsubscribe('quotes', subscription.wsCallback);
-        this.api.subscriptions.unsubscribe('ticker', subscription.wsCallback);
-
+        // Always release refcounts so the dedupe map stays consistent.
+        // releaseL1 guards its own wire call.
         subscription.symbols.forEach((symbol) => {
             this.releaseL1(symbol, listenerGUID);
         });
@@ -514,7 +522,13 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.api
             .subscribeToQuotes(symbol, true)
             .then(() => logger.info(`Subscribed to L1: ${symbol}`))
-            .catch((err: unknown) => logger.warn(`Failed to subscribe to L1: ${symbol}`, err));
+            .catch((err: unknown) => {
+                // Roll back the dedupe entry so a future subscribe retries
+                // the wire — otherwise the symbol is permanently stuck
+                // "subscribed" locally until the next reconnect clears the map.
+                logger.warn(`Failed to subscribe to L1: ${symbol}, clearing local entry to allow retry`, err);
+                this.l1Listeners.delete(symbol);
+            });
     }
 
     /**
@@ -526,16 +540,17 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         set.delete(listenerGUID);
         if (set.size > 0) return;
         this.l1Listeners.delete(symbol);
+        if (!this.api.isConnected()) return;
         this.api
             .unsubscribeFromQuotes(symbol)
             .catch((err: unknown) => logger.debug(`Failed to unsubscribe from L1: ${symbol}`, err));
     }
 
     /**
-     * Lazily register the WS reconnect handler. The Datafeed is constructed
-     * before TradeServerClient.connect() lands the WS, so onReconnect would
-     * throw if called from the constructor. Register on first use — by the
-     * time TV calls subscribeBars/subscribeQuotes, the WS is up.
+     * Defensive: register the WS reconnect handler on first TV subscribe call
+     * rather than in the constructor. The current app awaits connect() before
+     * constructing Datafeed, but as a library this class can be wired in
+     * other orders — registering eagerly would throw if wsClient isn't up yet.
      */
     private ensureReconnectHandler(): void {
         if (this.reconnectRegistered) return;
