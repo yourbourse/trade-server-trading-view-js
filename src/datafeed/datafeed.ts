@@ -518,14 +518,21 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             existing.add(listenerGUID);
             return;
         }
-        this.l1Listeners.set(symbol, new Set([listenerGUID]));
+        const ownSet = new Set([listenerGUID]);
+        this.l1Listeners.set(symbol, ownSet);
         this.api
             .subscribeToQuotes(symbol, true)
             .then(() => logger.info(`Subscribed to L1: ${symbol}`))
             .catch((err: unknown) => {
-                // Roll back the dedupe entry so a future subscribe retries
-                // the wire — otherwise the symbol is permanently stuck
-                // "subscribed" locally until the next reconnect clears the map.
+                // Roll back only if our Set is still the one in the map.
+                // pendingRequests survive auto-reconnect, so a pre-disconnect
+                // subscribe can reject *after* handleReconnect() has cleared
+                // l1Listeners and a fresh acquire has installed a new Set —
+                // deleting unconditionally would wipe that valid state.
+                if (this.l1Listeners.get(symbol) !== ownSet) {
+                    logger.debug(`L1 subscribe rejection for ${symbol} is stale, ignoring`, err);
+                    return;
+                }
                 logger.warn(`Failed to subscribe to L1: ${symbol}, clearing local entry to allow retry`, err);
                 this.l1Listeners.delete(symbol);
             });
@@ -554,8 +561,12 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
      */
     private ensureReconnectHandler(): void {
         if (this.reconnectRegistered) return;
-        this.reconnectRegistered = true;
+        // Register first, flip the flag only on success — otherwise a throw
+        // (e.g. called before TradeServerClient.connect() in non-current
+        // wiring) would latch reconnectRegistered=true and silently skip
+        // every later attempt, leaving replay broken.
         this.api.onReconnect(() => this.handleReconnect());
+        this.reconnectRegistered = true;
     }
 
     /**
