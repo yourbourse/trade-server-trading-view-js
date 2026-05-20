@@ -3,7 +3,7 @@ import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../s
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
 import { handleApiError } from '@/utils/apiError';
-import { Side, OrderType, OrderStatus, ParentType } from '../types';
+import { Side, OrderType, OrderStatus, ParentType, isStopBracketOrderType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
@@ -27,6 +27,38 @@ export class OrderService {
 
     clearCache(): void {
         this.cachedOrders = [];
+    }
+
+    findPositionStopBracketOrder(positionId: string): Order | undefined {
+        return this.cachedOrders.find((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === positionId &&
+                bracket.parentType === ParentType.Position &&
+                isStopBracketOrderType(order.type)
+            );
+        });
+    }
+
+    findPositionBracketOrder(positionId: string, type: OrderType): Order | undefined {
+        return this.cachedOrders.find((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === positionId &&
+                bracket.parentType === ParentType.Position &&
+                order.type === type
+            );
+        });
+    }
+
+    getPositionBracketPrices(positionId: string): { stopLoss?: number; takeProfit?: number } {
+        const stopOrder = this.findPositionStopBracketOrder(positionId);
+        const tpOrder = this.findPositionBracketOrder(positionId, OrderType.Limit);
+
+        return {
+            stopLoss: stopOrder?.stopPrice,
+            takeProfit: tpOrder?.limitPrice,
+        };
     }
 
     /**
@@ -55,7 +87,16 @@ export class OrderService {
             );
         };
 
-        const hasStop = this.cachedOrders.some((order) => isBracketFor(order, OrderType.Stop));
+        const isStopBracketFor = (order: Order): boolean => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === parentId &&
+                bracket.parentType === ParentType.Position &&
+                isStopBracketOrderType(order.type)
+            );
+        };
+
+        const hasStop = this.cachedOrders.some(isStopBracketFor);
         const hasTakeProfit = this.cachedOrders.some((order) => isBracketFor(order, OrderType.Limit));
 
         if (position.stopLoss !== undefined && !hasStop) {
@@ -102,37 +143,48 @@ export class OrderService {
     }
 
     /**
-     * Keep position bracket order prices aligned with the position's SL/TP fields.
+     * Keep position bracket orders aligned with the position's SL/TP fields.
+     * Updates prices, and removes cached bracket orders when SL/TP is cleared.
      */
     syncBracketOrdersFromPosition(position: Position): Order[] {
-        const changed: Order[] = [];
+        const updated: Order[] = [];
 
-        this.cachedOrders = this.cachedOrders.map((order) => {
+        this.cachedOrders = this.cachedOrders.flatMap((order) => {
             const bracket = order as Order & { parentId?: string; parentType?: number };
             if (bracket.parentId !== position.id || bracket.parentType !== ParentType.Position) {
-                return order;
+                return [order];
             }
 
-            if (order.type === OrderType.Stop && position.stopLoss !== undefined && order.stopPrice !== position.stopLoss) {
-                const updated = { ...order, stopPrice: position.stopLoss };
-                changed.push(updated);
-                return updated;
+            if (isStopBracketOrderType(order.type)) {
+                if (position.stopLoss === undefined) {
+                    updated.push({ ...order, status: OrderStatus.Canceled });
+                    return [];
+                }
+                if (order.stopPrice !== position.stopLoss) {
+                    const changed = { ...order, stopPrice: position.stopLoss };
+                    updated.push(changed);
+                    return [changed];
+                }
+                return [order];
             }
 
-            if (
-                order.type === OrderType.Limit &&
-                position.takeProfit !== undefined &&
-                order.limitPrice !== position.takeProfit
-            ) {
-                const updated = { ...order, limitPrice: position.takeProfit };
-                changed.push(updated);
-                return updated;
+            if (order.type === OrderType.Limit) {
+                if (position.takeProfit === undefined) {
+                    updated.push({ ...order, status: OrderStatus.Canceled });
+                    return [];
+                }
+                if (order.limitPrice !== position.takeProfit) {
+                    const changed = { ...order, limitPrice: position.takeProfit };
+                    updated.push(changed);
+                    return [changed];
+                }
+                return [order];
             }
 
-            return order;
+            return [order];
         });
 
-        return changed;
+        return updated;
     }
 
     /**
@@ -164,7 +216,7 @@ export class OrderService {
             return order;
         }
 
-        if (order.type === OrderType.Stop && position.stopLoss !== undefined) {
+        if (isStopBracketOrderType(order.type) && position.stopLoss !== undefined) {
             return { ...order, stopPrice: position.stopLoss };
         }
 

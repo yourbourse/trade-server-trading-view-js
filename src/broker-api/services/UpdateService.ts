@@ -10,6 +10,7 @@ const logger = createLogger({ prefix: '[UpdateService]' });
 export class UpdateService {
     private api: TradeServerClient;
     private host: IBrokerConnectionAdapterHost;
+    private orderUpdateChain: Promise<void> = Promise.resolve();
     private onGetCachedOrders: () => Order[];
     private onGetCachedPositions: () => Position[];
     private onOrderCacheUpdate: (orders: Order[]) => void;
@@ -68,6 +69,14 @@ export class UpdateService {
     }
 
     private handleOrderUpdate(data: { type: string; data: TradeServerOrder[] }): void {
+        this.orderUpdateChain = this.orderUpdateChain
+            .then(() => this.processOrderUpdate(data))
+            .catch((error) => {
+                logger.error('Error processing order update:', error);
+            });
+    }
+
+    private async processOrderUpdate(data: { type: string; data: TradeServerOrder[] }): Promise<void> {
         const { type, data: orders } = data;
         const cachedOrders = this.onGetCachedOrders();
 
@@ -75,7 +84,7 @@ export class UpdateService {
         let hasTerminalOrders = false;
 
         if (type === 's') {
-            void this.applyEnrichedOrderSnapshot(orders);
+            await this.applyEnrichedOrderSnapshot(orders);
             return;
         } else if (type === 'u') {
             const cachedPositions = this.onGetCachedPositions();
@@ -155,8 +164,6 @@ export class UpdateService {
                 } else {
                     const transformedPos = (transformPositions([pos]) as Position[])[0];
                     if (transformedPos) {
-                        const hadSlTp =
-                            transformedPos.stopLoss !== undefined || transformedPos.takeProfit !== undefined;
                         const protectedPos = this.onApplyServerPositionUpdate(transformedPos);
 
                         if (protectedPos.qty === 0) {
@@ -178,12 +185,10 @@ export class UpdateService {
                             }
                             positionsToNotify.push(protectedPos);
 
-                            if (hadSlTp) {
-                                const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
-                                syncedOrders.forEach((order) => {
-                                    this.host?.orderUpdate?.(order);
-                                });
-                            }
+                            const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
+                            syncedOrders.forEach((order) => {
+                                this.host?.orderUpdate?.(order);
+                            });
                         }
                     }
                 }

@@ -184,11 +184,13 @@ export class BrokerApi extends AbstractBrokerMinimal {
             bracketOrder.parentId &&
             (order.stopPrice !== undefined || order.limitPrice !== undefined)
         ) {
-            const position = this.positionService.getCachedPositions().find((p) => p.id === bracketOrder.parentId);
-            const brackets: Brackets = {
-                stopLoss: order.stopPrice ?? position?.stopLoss,
-                takeProfit: order.limitPrice ?? position?.takeProfit,
-            };
+            const brackets: Brackets = {};
+            if (order.stopPrice !== undefined) {
+                brackets.stopLoss = order.stopPrice;
+            }
+            if (order.limitPrice !== undefined) {
+                brackets.takeProfit = order.limitPrice;
+            }
             await this.editPositionBrackets(bracketOrder.parentId, brackets);
             return;
         }
@@ -211,7 +213,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     ): Promise<void> {
         void _customFields;
 
-        await this.positionService.editPositionBrackets(positionId, brackets);
+        const resolvedBrackets = await this.resolvePositionBrackets(positionId, brackets);
+        await this.positionService.editPositionBrackets(positionId, resolvedBrackets);
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (!updatedPosition) {
@@ -225,6 +228,46 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const syncedOrders = this.orderService.syncBracketOrdersFromPosition(updatedPosition);
         syncedOrders.forEach((order) => this.host.orderUpdate?.(order));
+    }
+
+    /**
+     * Merge partial bracket updates with cached state. Omitted fields are preserved;
+     * fields explicitly set to undefined are treated as cancel requests.
+     */
+    private async resolvePositionBrackets(positionId: string, brackets: Brackets): Promise<Brackets> {
+        const position = await this.positionService.ensureCachedPosition(positionId);
+        if (!position) {
+            const message = `Position ${positionId} not found`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        const orderBrackets = this.orderService.getPositionBracketPrices(positionId);
+
+        const stopLoss =
+            'stopLoss' in brackets ? brackets.stopLoss : (position.stopLoss ?? orderBrackets.stopLoss);
+        const takeProfit =
+            'takeProfit' in brackets ? brackets.takeProfit : (position.takeProfit ?? orderBrackets.takeProfit);
+
+        const siblingStopKnown =
+            !('stopLoss' in brackets) && (position.stopLoss !== undefined || orderBrackets.stopLoss !== undefined);
+        const siblingTakeProfitKnown =
+            !('takeProfit' in brackets) &&
+            (position.takeProfit !== undefined || orderBrackets.takeProfit !== undefined);
+
+        if (siblingStopKnown && stopLoss === undefined) {
+            const message = `Unable to resolve stop loss for position ${positionId}`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        if (siblingTakeProfitKnown && takeProfit === undefined) {
+            const message = `Unable to resolve take profit for position ${positionId}`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        return { stopLoss, takeProfit };
     }
 
     public subscribeEquity(): void {
