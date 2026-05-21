@@ -114,13 +114,11 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // tz is explicit tick size; fallback derives it from decimal precision
         const mintick = symbolConfig.tz ?? 1 / Math.pow(10, symbolConfig.dp);
 
-        // For fractional-pip pricing (odd dp: 5 for EURUSD, 3 for JPY), 1 pip = 10 ticks.
-        // For whole-pip pricing (even dp: 4, 2), 1 pip = 1 tick.
-        const pipSize = symbolConfig.dp % 2 === 1 ? mintick * 10 : mintick;
+        const pipSize = mintick;
 
         // tv = monetary value of 1 tick move per lot. Divide by lotSize to get per-unit value.
         const lotSize = symbolConfig.l;
-        const pipValue = symbolConfig.tv ? (symbolConfig.tv * (pipSize / mintick)) / lotSize : 1;
+        const pipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : 1;
 
         const allowedOrderTypes: OrderType[] = [];
         if (symbolConfig.M) {
