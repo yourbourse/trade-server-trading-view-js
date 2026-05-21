@@ -1,9 +1,9 @@
-import { Order, PlaceOrderResult, PreOrder } from '../../../charting_library/charting_library';
+import { Order, PlaceOrderResult, Position, PreOrder } from '../../../charting_library/charting_library';
 import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
-import { transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
+import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
 import { handleApiError } from '@/utils/apiError';
-import { Side } from '../types';
+import { Side, OrderType, OrderStatus, ParentType, isStopBracketOrderType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
@@ -29,6 +29,204 @@ export class OrderService {
         this.cachedOrders = [];
     }
 
+    findPositionStopBracketOrder(positionId: string): Order | undefined {
+        return this.cachedOrders.find((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === positionId &&
+                bracket.parentType === ParentType.Position &&
+                isStopBracketOrderType(order.type)
+            );
+        });
+    }
+
+    findPositionBracketOrder(positionId: string, type: OrderType): Order | undefined {
+        return this.cachedOrders.find((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === positionId &&
+                bracket.parentType === ParentType.Position &&
+                order.type === type
+            );
+        });
+    }
+
+    getPositionBracketPrices(positionId: string): { stopLoss?: number; takeProfit?: number } {
+        const stopOrder = this.findPositionStopBracketOrder(positionId);
+        const tpOrder = this.findPositionBracketOrder(positionId, OrderType.Limit);
+
+        return {
+            stopLoss: stopOrder?.stopPrice,
+            takeProfit: tpOrder?.limitPrice,
+        };
+    }
+
+    /**
+     * Ensure cached orders include bracket lines for position SL/TP stored on the position itself.
+     *
+     * The synthesized order IDs match the format used by `enrichPositionBracketOrders` in
+     * `type-mappings.ts` so that later snapshot updates replace (rather than duplicate) the
+     * locally-synthesized bracket orders.
+     */
+    ensurePositionBracketOrders(position: Position): Order[] {
+        const positionIdNumber = parseInt(position.id, 10);
+        if (Number.isNaN(positionIdNumber)) {
+            return [];
+        }
+
+        const parentId = position.id;
+        const oppositeSide = position.side === Side.Buy ? Side.Sell : Side.Buy;
+        const added: Order[] = [];
+
+        const isBracketFor = (order: Order, type: OrderType): boolean => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === parentId &&
+                bracket.parentType === ParentType.Position &&
+                order.type === type
+            );
+        };
+
+        const isStopBracketFor = (order: Order): boolean => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            return (
+                bracket.parentId === parentId &&
+                bracket.parentType === ParentType.Position &&
+                isStopBracketOrderType(order.type)
+            );
+        };
+
+        const hasStop = this.cachedOrders.some(isStopBracketFor);
+        const hasTakeProfit = this.cachedOrders.some((order) => isBracketFor(order, OrderType.Limit));
+
+        if (position.stopLoss !== undefined && !hasStop) {
+            added.push({
+                id: (-(positionIdNumber * 10 + 1)).toString(),
+                symbol: position.symbol,
+                brokerSymbol: position.brokerSymbol ?? position.symbol,
+                type: OrderType.Stop,
+                side: oppositeSide,
+                qty: position.qty,
+                status: OrderStatus.Working,
+                stopPrice: position.stopLoss,
+                parentId,
+                parentType: ParentType.Position,
+                avg: 0,
+                filledQty: 0,
+                duration: { type: 'gtc' },
+            } as Order);
+        }
+
+        if (position.takeProfit !== undefined && !hasTakeProfit) {
+            added.push({
+                id: (-(positionIdNumber * 10 + 2)).toString(),
+                symbol: position.symbol,
+                brokerSymbol: position.brokerSymbol ?? position.symbol,
+                type: OrderType.Limit,
+                side: oppositeSide,
+                qty: position.qty,
+                status: OrderStatus.Working,
+                limitPrice: position.takeProfit,
+                parentId,
+                parentType: ParentType.Position,
+                avg: 0,
+                filledQty: 0,
+                duration: { type: 'gtc' },
+            } as Order);
+        }
+
+        if (added.length > 0) {
+            this.cachedOrders = [...this.cachedOrders, ...added];
+        }
+
+        return added;
+    }
+
+    /**
+     * Keep position bracket orders aligned with the position's SL/TP fields.
+     * Updates prices, and removes cached bracket orders when SL/TP is cleared.
+     */
+    syncBracketOrdersFromPosition(position: Position): Order[] {
+        const updated: Order[] = [];
+
+        this.cachedOrders = this.cachedOrders.flatMap((order) => {
+            const bracket = order as Order & { parentId?: string; parentType?: number };
+            if (bracket.parentId !== position.id || bracket.parentType !== ParentType.Position) {
+                return [order];
+            }
+
+            if (isStopBracketOrderType(order.type)) {
+                if (position.stopLoss === undefined) {
+                    updated.push({ ...order, status: OrderStatus.Canceled });
+                    return [];
+                }
+                if (order.stopPrice !== position.stopLoss) {
+                    const changed = { ...order, stopPrice: position.stopLoss };
+                    updated.push(changed);
+                    return [changed];
+                }
+                return [order];
+            }
+
+            if (order.type === OrderType.Limit) {
+                if (position.takeProfit === undefined) {
+                    updated.push({ ...order, status: OrderStatus.Canceled });
+                    return [];
+                }
+                if (order.limitPrice !== position.takeProfit) {
+                    const changed = { ...order, limitPrice: position.takeProfit };
+                    updated.push(changed);
+                    return [changed];
+                }
+                return [order];
+            }
+
+            return [order];
+        });
+
+        return updated;
+    }
+
+    /**
+     * Merge a WebSocket order patch without losing position-bracket linkage or fresh SL/TP prices.
+     */
+    mergeWebSocketOrderUpdate(existing: Order | undefined, incoming: Order, positions: Position[]): Order {
+        let merged: Order = existing ? { ...existing, ...incoming } : { ...incoming };
+
+        const existingBracket = existing as (Order & { parentId?: string; parentType?: number }) | undefined;
+        if (existingBracket?.parentType === ParentType.Position && existingBracket.parentId) {
+            merged = {
+                ...merged,
+                parentId: existingBracket.parentId,
+                parentType: ParentType.Position,
+            };
+        }
+
+        return this.alignPositionBracketOrderWithPosition(merged, positions);
+    }
+
+    alignPositionBracketOrderWithPosition(order: Order, positions: Position[]): Order {
+        const bracket = order as Order & { parentId?: string; parentType?: number };
+        if (bracket.parentType !== ParentType.Position || !bracket.parentId) {
+            return order;
+        }
+
+        const position = positions.find((p) => p.id === bracket.parentId);
+        if (!position) {
+            return order;
+        }
+
+        if (isStopBracketOrderType(order.type) && position.stopLoss !== undefined) {
+            return { ...order, stopPrice: position.stopLoss };
+        }
+
+        if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
+            return { ...order, limitPrice: position.takeProfit };
+        }
+
+        return order;
+    }
+
     async getAllOrders(): Promise<Order[]> {
         logger.debug('getAllOrders');
 
@@ -46,7 +244,11 @@ export class OrderService {
             const historicalOrdersList = historicalOrders || [];
             const allOrders = [...workingOrdersList, ...historicalOrdersList];
 
-            this.cachedOrders = transformOrders(allOrders) as Order[];
+            const positionsData = await this.api.trading.getPositions({});
+            const positions = positionsData?.positions || [];
+            const ordersWithPositionBrackets = enrichPositionBracketOrders(allOrders, positions);
+
+            this.cachedOrders = transformOrders(ordersWithPositionBrackets) as Order[];
 
             logger.info('Fetched ALL orders (with pagination):', {
                 workingCount: workingOrdersList.length,

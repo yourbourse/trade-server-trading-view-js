@@ -10,7 +10,11 @@ import {
     IBrokerTerminal,
     IChartingLibraryWidget,
 } from 'charting_library/charting_library.js';
-import type { OrderDurationMetaInfo, TradingTerminalWidgetOptions } from 'charting_library/charting_library.js';
+import type {
+    BrokerConfigFlags,
+    OrderDurationMetaInfo,
+    TradingTerminalWidgetOptions,
+} from 'charting_library/charting_library.js';
 
 import CONFIG from './config.js';
 import Datafeed from './datafeed/datafeed.js';
@@ -238,6 +242,27 @@ class TradingApp {
 
         //new UDFCompatibleDatafeed("https://demo_feed.tradingview.com")
 
+        // TradingView runtime also reads supportModify*Brackets from configFlags (see library Me defaults).
+        const brokerConfigFlags = {
+            supportClosePosition: true,
+            supportModifyOrderPrice: true,
+            supportReversePosition: true,
+            supportOrdersHistory: false,
+            supportStopLimitOrders: true,
+            supportModifyDuration: true,
+            supportAddBracketsToExistingOrder: false,
+            supportModifyBrackets: true,
+            supportModifyOrderBrackets: true,
+            supportModifyPositionBrackets: true,
+            supportOrderBrackets: true,
+            supportPositionBrackets: true,
+            showNotificationsLog: true,
+	    
+        } as BrokerConfigFlags & {
+            supportModifyOrderBrackets: boolean;
+            supportModifyPositionBrackets: boolean;
+        };
+
         const widgetOptions: TradingTerminalWidgetOptions = {
             symbol: 'EURUSD', // Default symbol
             datafeed: this.datafeed,
@@ -269,19 +294,7 @@ class TradingApp {
                 return this.brokerAPI as unknown as IBrokerTerminal;
             },
             broker_config: {
-                configFlags: {
-                    supportClosePosition: true,
-                    supportModifyOrderPrice: true,
-                    supportReversePosition: true,
-                    supportOrdersHistory: false,
-                    supportAddBracketsToExistingOrder: false,
-                    supportModifyBrackets: true,
-                    supportOrderBrackets: true,
-                    supportPositionBrackets: true,
-                    supportStopLimitOrders: true,
-                    supportModifyDuration: true,
-                    showNotificationsLog: true,
-                },
+                configFlags: brokerConfigFlags,
                 durations: [
                     {
                         value: 'day',
