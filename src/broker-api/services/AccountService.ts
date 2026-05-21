@@ -68,17 +68,6 @@ export class AccountService {
         currency: string;
         comment: string;
     }> = [];
-    private tradeHistoryData: Array<{
-        id: string;
-        symbol: string;
-        side: number;
-        qty: number;
-        avgPrice: number;
-        pl: number;
-        time: string;
-        orderId: string;
-    }> = [];
-
     constructor(api: TradeServerClient, host: IBrokerConnectionAdapterHost, tradeHistoryService: TradeHistoryService) {
         this.api = api;
         this.host = host;
@@ -271,10 +260,16 @@ export class AccountService {
         const tradeHistoryTable: AccountManagerTable = {
             id: 'tradeHistory',
             columns: tradeHistoryColumns,
-            getData: async () => {
-                logger.debug('getData() called for trade history table');
-                await this.loadTradeHistoryData();
-                return this.tradeHistoryData;
+            initialSorting: {
+                property: 'time',
+                asc: false,
+            },
+            flags: {
+                supportPagination: true,
+            },
+            getData: async (paginationLastId?: string | number) => {
+                logger.debug('getData() called for trade history table', { paginationLastId });
+                return this.tradeHistoryService.getTradeHistoryRows(paginationLastId);
             },
             changeDelegate: this.accountDetailsChangeDelegate,
         };
@@ -326,17 +321,6 @@ export class AccountService {
                     value: 'Failed to load account profile',
                 },
             ];
-        }
-    }
-
-    private async loadTradeHistoryData(): Promise<void> {
-        try {
-            logger.debug('Loading trade history table data...');
-            this.tradeHistoryData = await this.tradeHistoryService.getTradeHistoryRows();
-            logger.info('Trade history loaded:', this.tradeHistoryData.length, 'trades');
-        } catch (error) {
-            logger.error('Error loading trade history:', error);
-            this.tradeHistoryData = [];
         }
     }
 
