@@ -242,17 +242,17 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     ): void {
         logger.debug('subscribeBars:', symbolInfo.name, resolution, subscriberUID);
 
-        this.subscribers[subscriberUID] = {
-            symbolInfo,
-            resolution,
-            callback: onRealtimeCallback,
-        };
-
         const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
         if (!interval) {
             logger.warn(`Unsupported resolution for subscribeBars: ${resolution}`);
             return;
         }
+
+        this.subscribers[subscriberUID] = {
+            symbolInfo,
+            resolution,
+            callback: onRealtimeCallback,
+        };
 
         // Subscribe to candle updates from the Trade Server API
         this.api

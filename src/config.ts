@@ -75,6 +75,7 @@ const CONFIG: AppConfig = {
 
     // Market Data Configuration
     marketData: {
+        // TradingView resolution format; "1M" here means one month (mapped to API "M" below).
         historyResolutions: ['1', '5', '15', '30', '60', '240', 'D', '1W', '1M'],
     },
 
