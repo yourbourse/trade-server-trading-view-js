@@ -18,7 +18,7 @@ import {
 import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
-import { ConnectionStatus, Side } from './types';
+import { ConnectionStatus, OrderType, Side } from './types';
 import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
@@ -109,21 +109,69 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     public async symbolInfo(symbol: string): Promise<InstrumentInfo> {
-        const mintick = await this.host.getSymbolMinTick(symbol);
-        const pipSize = mintick;
-        const accountCurrencyRate = 1;
-        const pointValue = 1;
+        const symbolConfig = await this.api.marketData.getSymbolInfo(symbol);
+
+        // tz is explicit tick size; fallback derives it from decimal precision
+        const mintick = symbolConfig.tz ?? 1 / Math.pow(10, symbolConfig.dp);
+
+        // For fractional-pip pricing (odd dp: 5 for EURUSD, 3 for JPY), 1 pip = 10 ticks.
+        // For whole-pip pricing (even dp: 4, 2), 1 pip = 1 tick.
+        const pipSize = symbolConfig.dp % 2 === 1 ? mintick * 10 : mintick;
+
+        // tv = monetary value of 1 tick move per lot. Divide by lotSize to get per-unit value.
+        const lotSize = symbolConfig.l;
+        const pipValue = symbolConfig.tv ? (symbolConfig.tv * (pipSize / mintick)) / lotSize : 1;
+
+        const allowedOrderTypes: OrderType[] = [];
+        if (symbolConfig.M) {
+            allowedOrderTypes.push(OrderType.Market);
+        }
+        if (symbolConfig.L) {
+            allowedOrderTypes.push(OrderType.Limit);
+        }
+        if (symbolConfig.S) {
+            allowedOrderTypes.push(OrderType.Stop);
+        }
+        if (symbolConfig.SLi) {
+            allowedOrderTypes.push(OrderType.StopLimit);
+        }
+
+        const allowedDurations: string[] = [];
+        if (symbolConfig.day) {
+            allowedDurations.push('day');
+        }
+        if (symbolConfig.gtc) {
+            allowedDurations.push('gtc');
+        }
+        if (symbolConfig.gtd) {
+            allowedDurations.push('gtd');
+        }
+        if (symbolConfig.ioc) {
+            allowedDurations.push('ioc');
+        }
+        if (symbolConfig.fok) {
+            allowedDurations.push('fok');
+        }
 
         return {
             qty: {
-                min: 1,
-                max: 1e12,
-                step: 1,
+                min: symbolConfig.min ,
+                max: symbolConfig.max || 1e12,
+                step: symbolConfig.i,
             },
-            pipValue: pipSize * pointValue * accountCurrencyRate || 1,
-            pipSize: pipSize,
+            pipValue,
+            pipSize,
             minTick: mintick,
-            description: '',
+            lotSize,
+            description: symbolConfig.d,
+            brokerSymbol: symbolConfig.n,
+            //type: 'forex',
+            currency: symbolConfig.p,
+            baseCurrency: symbolConfig.b,
+            quoteCurrency: symbolConfig.p,
+            bigPointValue: symbolConfig.tv && symbolConfig.tz ? symbolConfig.tv / symbolConfig.tz / lotSize : undefined,
+            ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
+            ...(allowedDurations.length > 0 && { allowedDurations }),
         };
     }
 

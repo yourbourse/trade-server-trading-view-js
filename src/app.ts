@@ -278,9 +278,16 @@ class TradingApp {
                     supportModifyBrackets: true,
                     supportOrderBrackets: true,
                     supportPositionBrackets: true,
+                    supportStopLimitOrders: true,
+                    supportModifyDuration: true,
                     showNotificationsLog: true,
                 },
                 durations: [
+                    {
+                        value: 'day',
+                        name: 'DAY',
+                        description: 'Day Order',
+                    },
                     {
                         value: 'gtc',
                         name: 'GTC',
