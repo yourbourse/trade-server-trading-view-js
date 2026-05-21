@@ -3,7 +3,7 @@
  * Handles user authentication and redirects to the main application
  */
 
-import { isAuthenticated } from './utils/auth.js';
+import { isAuthenticated, persistApiToken } from './utils/auth.js';
 import { AuthService } from './trade-server-api/rest/AuthService.js';
 import { AccountService } from './trade-server-api/rest/AccountService.js';
 import { client } from './schema/public-api/client.gen.js';
@@ -212,13 +212,10 @@ class SignInManager {
             // Verify the connection by fetching account info
             await accountService.getAccountInfo();
 
-            // Save API key and signing token if returned
-            if (response?.token) {
-                sessionStorage.setItem('apiKey', response.token);
-            }
-            if (response?.signingToken) {
-                sessionStorage.setItem('signingToken', response.signingToken);
-            }
+            // Persist apiKey, signingToken, and expiration via the single
+            // helper — expiration is what TradeServerClient's scheduler uses
+            // to time the background refresh.
+            persistApiToken(response);
         } catch (error: unknown) {
             logger.error('Authentication error:', error);
 

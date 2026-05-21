@@ -67,6 +67,16 @@ export class WebSocketClient {
     }
 
     /**
+     * Rotate the API key used for outgoing frames. The server validates
+     * `X-YB-API-Key` on each heartbeat / subscribe / unsubscribe message, so
+     * an in-place update keeps the existing WS session alive across token
+     * refresh — no reconnect required.
+     */
+    setApiKey(apiKey: string): void {
+        this.options.apiKey = apiKey;
+    }
+
+    /**
      * Check if WebSocket is connected
      */
     isConnected(): boolean {
