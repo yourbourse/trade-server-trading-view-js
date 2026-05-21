@@ -156,6 +156,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     format: 'price',
                     has_intraday: true,
                     has_weekly_and_monthly: true,
+                    weekly_multipliers: ['1'],
+                    monthly_multipliers: ['1'],
                     supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
                 };
 
@@ -180,8 +182,12 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         const { from, to } = periodParams;
         logger.debug('getBars:', symbolInfo.name, resolution, new Date(from * 1000), new Date(to * 1000));
 
-        // Map TradingView resolution to API interval
-        const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
+        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        if (!interval) {
+            logger.warn(`Unsupported resolution: ${resolution}`);
+            onHistoryCallback([], { noData: true });
+            return;
+        }
 
         // Use TradeServerClient method which internally uses SDK
         this.api.marketData
@@ -242,8 +248,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             callback: onRealtimeCallback,
         };
 
-        // Map TradingView resolution to API interval
-        const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
+        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        if (!interval) {
+            logger.warn(`Unsupported resolution for subscribeBars: ${resolution}`);
+            return;
+        }
 
         // Subscribe to candle updates from the Trade Server API
         this.api
@@ -306,8 +315,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         if (subscriber) {
             const { symbolInfo, resolution, candleCallback } = subscriber;
 
-            // Map TradingView resolution to API interval
-            const interval = (CONFIG.websocket.intervalMapping[resolution] || resolution) as CandleInterval;
+            const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+            if (!interval) {
+                delete this.subscribers[subscriberUID];
+                return;
+            }
 
             // Remove event listener first to stop receiving updates immediately
             if (candleCallback) {

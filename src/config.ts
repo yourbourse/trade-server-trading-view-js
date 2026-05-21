@@ -75,7 +75,7 @@ const CONFIG: AppConfig = {
 
     // Market Data Configuration
     marketData: {
-        historyResolutions: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'],
+        historyResolutions: ['1', '5', '15', '30', '60', '240', 'D', '1W', '1M'],
     },
 
     // WebSocket Configuration
@@ -89,8 +89,12 @@ const CONFIG: AppConfig = {
             '60': '1H',
             '240': '4H',
             D: 'D',
+            '1D': 'D',
             W: 'W',
+            '1W': 'W',
             M: 'M',
+            // TradingView "1M" is one month; API "1M" is one minute — must map explicitly
+            '1M': 'M',
         } as Record<ResolutionString, Interval>,
         // Auto-subscribe to channels on connection
         autoSubscribe: {
