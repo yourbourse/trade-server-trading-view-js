@@ -33,6 +33,10 @@ export enum OrderType {
     StopLimit = 4,
 }
 
+export function isStopBracketOrderType(type: OrderType): boolean {
+    return type === OrderType.Stop || type === OrderType.StopLimit;
+}
+
 // ==================== LOCALLY EXPORTED (as .js library does not export them even d.ts has it) ====================
 
 // Even though Side is declared in the .d.ts file,

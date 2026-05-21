@@ -3,6 +3,8 @@ import {
     AccountManagerInfo,
     AccountMetainfo,
     ActionMetaInfo,
+    Brackets,
+    CustomInputFieldsValues,
     DefaultContextMenuActionsParams,
     Execution,
     IBrokerConnectionAdapterHost,
@@ -18,7 +20,7 @@ import {
 import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
-import { ConnectionStatus, Side } from './types';
+import { ConnectionStatus, ParentType, Side } from './types';
 import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
@@ -79,6 +81,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
             onAccountStateUpdate: (data) => this.accountService.handleAccountStateUpdate(data),
             onRecalculateAMData: () => this.accountService.recalculateAMData(this.positionService.getCachedPositions()),
             onBracketActivation: (orderId) => this.bracketService.activateBracketsForFilledOrder(orderId),
+            onMergeOrderUpdate: (existing, incoming, positions) =>
+                this.orderService.mergeWebSocketOrderUpdate(existing, incoming, positions),
+            onApplyServerPositionUpdate: (incoming) => this.positionService.applyServerPositionUpdate(incoming),
+            onSyncBracketOrdersFromPosition: (position) => this.orderService.syncBracketOrdersFromPosition(position),
         });
 
         this.accountService.initializeAccountData();
@@ -171,14 +177,107 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {
         void _confirmId;
+
+        const bracketOrder = order as Order & { parentId?: string; parentType?: number };
+        if (
+            bracketOrder.parentType === ParentType.Position &&
+            bracketOrder.parentId &&
+            (order.stopPrice !== undefined || order.limitPrice !== undefined)
+        ) {
+            const brackets: Brackets = {};
+            if (order.stopPrice !== undefined) {
+                brackets.stopLoss = order.stopPrice;
+            }
+            if (order.limitPrice !== undefined) {
+                brackets.takeProfit = order.limitPrice;
+            }
+            await this.editPositionBrackets(bracketOrder.parentId, brackets);
+            return;
+        }
+
         await this.orderService.modifyOrder(order);
+
+        const cachedOrders = this.orderService.getCachedOrders();
+        const index = cachedOrders.findIndex((o) => o.id === order.id);
+        if (index >= 0) {
+            cachedOrders[index] = { ...cachedOrders[index]!, ...order };
+            this.orderService.setCachedOrders(cachedOrders);
+            this.host.orderUpdate?.(cachedOrders[index]!);
+        }
     }
 
     public async editPositionBrackets(
         positionId: string,
-        brackets: { stopLoss?: number; takeProfit?: number }
+        brackets: Brackets,
+        _customFields?: CustomInputFieldsValues
     ): Promise<void> {
-        await this.positionService.editPositionBrackets(positionId, brackets);
+        void _customFields;
+
+        const resolvedBrackets = await this.resolvePositionBrackets(positionId, brackets);
+        await this.positionService.editPositionBrackets(positionId, resolvedBrackets);
+
+        const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
+        if (!updatedPosition) {
+            return;
+        }
+
+        this.host.positionUpdate(updatedPosition);
+
+        const addedOrders = this.orderService.ensurePositionBracketOrders(updatedPosition);
+        addedOrders.forEach((order) => this.host.orderUpdate?.(order));
+
+        const syncedOrders = this.orderService.syncBracketOrdersFromPosition(updatedPosition);
+        syncedOrders.forEach((order) => this.host.orderUpdate?.(order));
+    }
+
+    /**
+     * Merge partial bracket updates with cached state. Omitted fields are preserved;
+     * fields explicitly set to undefined are treated as cancel requests.
+     */
+    private async resolvePositionBrackets(positionId: string, brackets: Brackets): Promise<Brackets> {
+        const position = await this.positionService.ensureCachedPosition(positionId);
+        if (!position) {
+            const message = `Position ${positionId} not found`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        const orderBrackets = this.orderService.getPositionBracketPrices(positionId);
+
+        const stopLoss =
+            'stopLoss' in brackets ? brackets.stopLoss : (position.stopLoss ?? orderBrackets.stopLoss);
+        const takeProfit =
+            'takeProfit' in brackets ? brackets.takeProfit : (position.takeProfit ?? orderBrackets.takeProfit);
+
+        const siblingStopKnown =
+            !('stopLoss' in brackets) && (position.stopLoss !== undefined || orderBrackets.stopLoss !== undefined);
+        const siblingTakeProfitKnown =
+            !('takeProfit' in brackets) &&
+            (position.takeProfit !== undefined || orderBrackets.takeProfit !== undefined);
+
+        if (siblingStopKnown && stopLoss === undefined) {
+            const message = `Unable to resolve stop loss for position ${positionId}`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        if (siblingTakeProfitKnown && takeProfit === undefined) {
+            const message = `Unable to resolve take profit for position ${positionId}`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        return { stopLoss, takeProfit };
+    }
+
+    public subscribeEquity(): void {
+        this.accountService.setEquityUpdateSubscribed(true);
+        const equity = this.accountService.getEquity();
+        setTimeout(() => this.host.equityUpdate(equity), 5);
+    }
+
+    public unsubscribeEquity(): void {
+        this.accountService.setEquityUpdateSubscribed(false);
     }
 
     public async cancelOrder(orderId: string): Promise<void> {
