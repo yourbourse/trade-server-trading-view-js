@@ -84,7 +84,7 @@ export function mapOrderStatus(status: OrderStatus): number {
  * @param tif - Trade Server TimeInForce
  * @returns TradingView duration object
  */
-export function mapTimeInForce(tif: TimeInForce): { type: string } {
+export function mapTimeInForce(tif: TimeInForce, tt?: number): { type: string; datetime?: number } {
     const tifMap: Record<TimeInForce, { type: string }> = {
         GTC: { type: 'gtc' },
         Day: { type: 'day' },
@@ -93,7 +93,12 @@ export function mapTimeInForce(tif: TimeInForce): { type: string } {
         GTD: { type: 'gtd' },
         Ms: { type: 'gtc' },
     };
-    return tifMap[tif] || { type: 'gtc' };
+    const result: { type: string; datetime?: number } = tifMap[tif] || { type: 'gtc' };
+    if (tif === 'GTD' && tt) {
+        // API tt is microseconds, TradingView datetime is milliseconds
+        result.datetime = Math.floor(tt / 1000);
+    }
+    return result;
 }
 
 /**
@@ -133,7 +138,7 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
         avg: order.ap || 0,
         filledQty: order.fq || 0,
         parentId: order.poi,
-        duration: mapTimeInForce(order.tif),
+        duration: mapTimeInForce(order.tif, order.tt),
         time: formatTimestamp(order.C),
     }));
 }
