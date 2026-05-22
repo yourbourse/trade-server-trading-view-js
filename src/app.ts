@@ -24,6 +24,7 @@ import { BrokerApi } from './broker-api/broker-api.js';
 import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
+import { OrderType } from './broker-api/types.js';
 
 const logger = createLogger({ prefix: '[App]' });
 
@@ -307,11 +308,13 @@ class TradingApp {
                         value: 'ioc',
                         name: 'IOC',
                         description: 'Immediate or Cancel',
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'fok',
                         name: 'FOK',
                         description: 'Fill or Kill',
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'gtd',
