@@ -282,7 +282,7 @@ export class AccountService {
             },
             getData: async (paginationLastId?: string | number) => {
                 logger.debug('getData() called for trade history table', { paginationLastId });
-                return this.tradeHistoryService.getTradeHistoryRows(paginationLastId);
+                return this.tradeHistoryService.getTradeHistory(paginationLastId);
             },
             changeDelegate: this.accountDetailsChangeDelegate,
         };

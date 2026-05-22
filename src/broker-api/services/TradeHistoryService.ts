@@ -13,27 +13,18 @@ const TRADE_HISTORY_FILTER: TradeHistoryPageRequestFilter = {
     sortOrder: 'desc',
 };
 
-function executionsFilter(symbol: string): TradeHistoryPageRequestFilter {
-    return {
-        symbolName: symbol,
-        maxResults: 100,
-        sortOrder: 'desc',
-    };
-}
-
 export class TradeHistoryService {
     private api: TradeServerClient;
     private nextPageToken: string | null = null;
     private firstPageFetchPromise: Promise<ReturnType<typeof transformTradeHistory>> | null = null;
     private loadMorePromise: Promise<ReturnType<typeof transformTradeHistory>> | null = null;
     private executionsCache = new Map<string, Trade[]>();
-    private executionsFetchPromises = new Map<string, Promise<Execution[]>>();
 
     constructor(api: TradeServerClient) {
         this.api = api;
     }
 
-    async getTradeHistoryRows(paginationLastId?: string | number) {
+    async getTradeHistory(paginationLastId?: string | number) {
         if (paginationLastId != null && paginationLastId !== '') {
             if (!this.nextPageToken) {
                 logger.debug('No next page token — end of trade history');
@@ -41,7 +32,7 @@ export class TradeHistoryService {
             }
 
             if (!this.loadMorePromise) {
-                this.loadMorePromise = this.fetchPage(this.nextPageToken).finally(() => {
+                this.loadMorePromise = this.fetchTradeHistoryPage(this.nextPageToken).finally(() => {
                     this.loadMorePromise = null;
                 });
             }
@@ -52,7 +43,7 @@ export class TradeHistoryService {
         this.nextPageToken = null;
 
         if (!this.firstPageFetchPromise) {
-            this.firstPageFetchPromise = this.fetchPage(null).finally(() => {
+            this.firstPageFetchPromise = this.fetchTradeHistoryPage(null).finally(() => {
                 this.firstPageFetchPromise = null;
             });
         }
@@ -63,32 +54,40 @@ export class TradeHistoryService {
     async getExecutions(symbol: string): Promise<Execution[]> {
         logger.debug('getExecutions for', symbol);
 
-        const cached = this.executionsCache.get(symbol);
-        if (cached) {
-            return this.mapTradesToExecutions(cached);
-        }
-
-        let fetchPromise = this.executionsFetchPromises.get(symbol);
-        if (!fetchPromise) {
-            fetchPromise = this.fetchExecutions(symbol).finally(() => {
-                this.executionsFetchPromises.delete(symbol);
-            });
-            this.executionsFetchPromises.set(symbol, fetchPromise);
-        }
-
-        return fetchPromise;
-    }
-
-    private async fetchExecutions(symbol: string): Promise<Execution[]> {
         try {
-            logger.debug('Fetching executions from server for', symbol);
-            const result = await this.api.trading.getTradeHistory(executionsFilter(symbol));
-            const trades = result.trades || [];
+            const cached = this.executionsCache.get(symbol);
+            if (cached) {
+                return this.mapTradesToExecutions(cached);
+            }
+
+            const trades = await this.api.trading.getAllTradeHistory({
+                symbolName: symbol,
+                maxResults: 100,
+                sortOrder: 'desc',
+            });
             this.executionsCache.set(symbol, trades);
             logger.info('Executions loaded:', trades.length, 'trades for', symbol);
             return this.mapTradesToExecutions(trades);
         } catch (error) {
             handleApiError(error, 'Error getting executions');
+        }
+    }
+
+    private async fetchTradeHistoryPage(nextToken: string | null) {
+        try {
+            logger.debug('Fetching trade history page', nextToken ? '(next page)' : '(first page)');
+            const result = await this.api.trading.getTradeHistory(TRADE_HISTORY_FILTER, nextToken);
+            const trades = result.trades || [];
+            const rows = transformTradeHistory(trades);
+
+            this.nextPageToken = result.nextToken ?? null;
+            logger.info('Trade history page loaded:', rows.length, 'trades', {
+                hasNextPage: Boolean(this.nextPageToken),
+            });
+
+            return rows;
+        } catch (error) {
+            handleApiError(error, 'Error getting trade history');
         }
     }
 
@@ -102,23 +101,5 @@ export class TradeHistoryService {
             side: trade.S === 'buy' ? Side.Buy : Side.Sell,
             time: Math.floor(trade.t / 1000),
         }));
-    }
-
-    private async fetchPage(apiNextToken: string | null) {
-        try {
-            logger.debug('Fetching trade history page', apiNextToken ? '(next page)' : '(first page)');
-            const result = await this.api.trading.getTradeHistory(TRADE_HISTORY_FILTER, apiNextToken);
-            const trades = result.trades || [];
-            const rows = transformTradeHistory(trades);
-
-            this.nextPageToken = result.nextToken ?? null;
-            logger.info('Trade history page loaded:', rows.length, 'trades', {
-                hasNextPage: Boolean(this.nextPageToken),
-            });
-
-            return rows;
-        } catch (error) {
-            handleApiError(error, 'Error getting trade history');
-        }
     }
 }
