@@ -9,6 +9,7 @@ import type {
     OrderStatus,
     OrderType,
     Position as TradeServerPosition,
+    Trade as TradeServerTrade,
     TimeInForce,
 } from '../schema/public-api/types.gen';
 
@@ -257,8 +258,29 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
         side: position.S === 'buy' ? Side.Buy : Side.Sell,
         avgPrice: position.p,
         pl: position.pl,
+        swap: position.sw,
         ...(position.sl !== undefined && { stopLoss: position.sl }),
         ...(position.tp !== undefined && { takeProfit: position.tp }),
         time: formatTimestamp(position.C),
+    }));
+}
+
+/**
+ * Transform Trade Server trades to Account Manager trade history rows
+ * @param trades - Array of Trade Server trades
+ * @returns Array of trade history table row objects
+ */
+export function transformTradeHistory(trades: TradeServerTrade[]) {
+    return trades.map((trade) => ({
+        id: trade.id.toString(),
+        tradeId: trade.id,
+        symbol: trade.s,
+        side: trade.S === 'buy' ? Side.Buy : Side.Sell,
+        qty: trade.q,
+        avgPrice: trade.p,
+        pl: trade.pl,
+        swap: trade.sw,
+        time: formatTimestamp(trade.t),
+        orderId: trade.oi.toString(),
     }));
 }

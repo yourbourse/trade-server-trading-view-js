@@ -273,6 +273,23 @@ export class TradingService {
     }
 
     /**
+     * Get ALL trade history with automatic pagination
+     */
+    async getAllTradeHistory(filter: TradeHistoryPageRequestFilter = {}): Promise<Trade[]> {
+        let allTrades: Trade[] = [];
+        let nextToken: string | undefined = undefined;
+
+        do {
+            const result: TradeCollection = await this.getTradeHistory(filter, nextToken ?? null);
+            const trades = result?.trades || [];
+            allTrades = allTrades.concat(trades);
+            nextToken = result.nextToken;
+        } while (nextToken);
+
+        return allTrades;
+    }
+
+    /**
      * Get specific trade by ID
      */
     async getTrade(tradeId: number): Promise<Trade> {
