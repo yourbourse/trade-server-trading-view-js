@@ -17,7 +17,6 @@ export class UpdateService {
     private onPositionCacheUpdate: (positions: Position[]) => void;
     private onAccountStateUpdate: (data: { data: AccountState[] }) => void;
     private onRecalculateAMData: () => void;
-    private onBracketActivation: (orderId: string) => Promise<void>;
     private onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
     private onApplyServerPositionUpdate: (incoming: Position) => Position;
     private onSyncBracketOrdersFromPosition: (position: Position) => Order[];
@@ -32,7 +31,6 @@ export class UpdateService {
             onPositionCacheUpdate: (positions: Position[]) => void;
             onAccountStateUpdate: (data: { data: AccountState[] }) => void;
             onRecalculateAMData: () => void;
-            onBracketActivation: (orderId: string) => Promise<void>;
             onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
             onApplyServerPositionUpdate: (incoming: Position) => Position;
             onSyncBracketOrdersFromPosition: (position: Position) => Order[];
@@ -46,7 +44,6 @@ export class UpdateService {
         this.onPositionCacheUpdate = callbacks.onPositionCacheUpdate;
         this.onAccountStateUpdate = callbacks.onAccountStateUpdate;
         this.onRecalculateAMData = callbacks.onRecalculateAMData;
-        this.onBracketActivation = callbacks.onBracketActivation;
         this.onMergeOrderUpdate = callbacks.onMergeOrderUpdate;
         this.onApplyServerPositionUpdate = callbacks.onApplyServerPositionUpdate;
         this.onSyncBracketOrdersFromPosition = callbacks.onSyncBracketOrdersFromPosition;
@@ -107,12 +104,6 @@ export class UpdateService {
                 ) {
                     hasTerminalOrders = true;
                     logger.info('Order reached terminal status:', merged.id, 'status:', merged.status);
-
-                    if (merged.status === OrderStatus.Filled) {
-                        this.onBracketActivation(merged.id).catch((err) => {
-                            logger.error('Error activating brackets for filled order:', err);
-                        });
-                    }
                 } else {
                     ordersToNotify.push(merged);
                 }
