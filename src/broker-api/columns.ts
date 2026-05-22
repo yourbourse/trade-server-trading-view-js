@@ -214,9 +214,9 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
     {
         label: 'Trade ID',
         alignment: 'right',
-        id: 'id',
-        dataFields: ['id'],
-        formatter: 'text' as StandardFormatterName,
+        id: 'tradeId',
+        dataFields: ['tradeId'],
+        formatter: 'integerSeparated' as StandardFormatterName,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;

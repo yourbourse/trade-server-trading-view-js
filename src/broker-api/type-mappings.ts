@@ -167,6 +167,7 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
 export function transformTradeHistory(trades: TradeServerTrade[]) {
     return trades.map((trade) => ({
         id: trade.id.toString(),
+        tradeId: trade.id,
         symbol: trade.s,
         side: trade.S === 'buy' ? Side.Buy : Side.Sell,
         qty: trade.q,
