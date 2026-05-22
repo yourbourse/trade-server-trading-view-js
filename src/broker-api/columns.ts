@@ -137,6 +137,13 @@ export const positionsPageColumns: AccountManagerColumn[] = [
         formatter: 'profit' as StandardFormatterName,
     },
     {
+        label: 'Swap',
+        alignment: 'right',
+        id: 'swap',
+        dataFields: ['swap'],
+        formatter: 'fixed' as StandardFormatterName,
+    },
+    {
         label: 'Date/Time',
         id: 'time',
         dataFields: ['time'],
@@ -197,6 +204,13 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
         id: 'pl',
         dataFields: ['pl'],
         formatter: 'profit' as StandardFormatterName,
+    },
+    {
+        label: 'Swap',
+        alignment: 'right',
+        id: 'swap',
+        dataFields: ['swap'],
+        formatter: 'fixed' as StandardFormatterName,
     },
     {
         label: 'Date/Time',

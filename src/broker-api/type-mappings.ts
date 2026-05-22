@@ -258,6 +258,7 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
         side: position.S === 'buy' ? Side.Buy : Side.Sell,
         avgPrice: position.p,
         pl: position.pl,
+        swap: position.sw,
         ...(position.sl !== undefined && { stopLoss: position.sl }),
         ...(position.tp !== undefined && { takeProfit: position.tp }),
         time: formatTimestamp(position.C),
@@ -278,6 +279,7 @@ export function transformTradeHistory(trades: TradeServerTrade[]) {
         qty: trade.q,
         avgPrice: trade.p,
         pl: trade.pl,
+        swap: trade.sw,
         time: formatTimestamp(trade.t),
         orderId: trade.oi.toString(),
     }));
