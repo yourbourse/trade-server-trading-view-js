@@ -44,14 +44,13 @@ export class AuthService {
 
     /**
      * Refresh API token
-     * POST /refresh
-     * @param refreshToken - Refresh token
+     * POST /refresh — authenticated by the current X-YB-API-Key header + HMAC
+     * signature; the request body is unused (spec types it as `unknown`).
      * @returns New API token information
      */
-    async refreshToken(refreshToken: string): Promise<ApiToken> {
+    async refreshToken(): Promise<ApiToken> {
         this.log.info('Refreshing API token');
-        const body = { refreshToken };
-        const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, body);
+        const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, {});
 
         if (response?.token) {
             this.user.apiKey = response.token;
