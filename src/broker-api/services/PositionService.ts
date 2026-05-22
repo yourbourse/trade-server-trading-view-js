@@ -143,7 +143,7 @@ export class PositionService {
                 q: closeQty,
                 S: position.side === Side.Buy ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'FOK',
+                tif: 'IOC',
                 pi: parseInt(positionId),
             };
 
