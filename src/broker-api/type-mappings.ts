@@ -3,7 +3,7 @@
  */
 
 import type { Order, Position } from '../../charting_library/charting_library';
-import { Side } from './types';
+import { ParentType, Side } from './types';
 import type {
     Order as TradeServerOrder,
     OrderStatus,
@@ -115,28 +115,133 @@ export function unmapTimeInForce(duration?: { type: string }): TimeInForce {
     return tifMap[duration.type] || 'GTC';
 }
 
+function isPositionBracketOrderType(type: OrderType): boolean {
+    return type === 'Stop' || type === 'StopLimit' || type === 'Limit';
+}
+
+function isStopBracketOrderType(type: OrderType): boolean {
+    return type === 'Stop' || type === 'StopLimit';
+}
+
+function positionHasStopBracket(orders: TradeServerOrder[], positionId: number): boolean {
+    return orders.some((order) => order.ppi === positionId && isStopBracketOrderType(order.t));
+}
+
+function positionHasTakeProfitBracket(orders: TradeServerOrder[], positionId: number): boolean {
+    return orders.some((order) => order.ppi === positionId && order.t === 'Limit');
+}
+
+function buildSyntheticStopOrder(
+    position: TradeServerPosition,
+    oppositeSide: 'buy' | 'sell'
+): TradeServerOrder {
+    return {
+        id: -(position.id * 10 + 1),
+        s: position.s,
+        q: position.q,
+        S: oppositeSide,
+        t: 'Stop',
+        sp: position.sl,
+        ppi: position.id,
+        tif: 'GTC',
+        st: 'Working',
+        C: position.C,
+        M: position.M,
+    };
+}
+
+function buildSyntheticTakeProfitOrder(
+    position: TradeServerPosition,
+    oppositeSide: 'buy' | 'sell'
+): TradeServerOrder {
+    return {
+        id: -(position.id * 10 + 2),
+        s: position.s,
+        q: position.q,
+        S: oppositeSide,
+        t: 'Limit',
+        lp: position.tp,
+        ppi: position.id,
+        tif: 'GTC',
+        st: 'Working',
+        C: position.C,
+        M: position.M,
+    };
+}
+
+/**
+ * Link bracket orders to open positions and synthesize missing SL/TP orders.
+ *
+ * Trade Server may store SL/TP on the position while bracket orders still reference
+ * the entry order (`poi`) instead of the position (`ppi`). TradingView only shows
+ * position bracket lines when orders have parentId = position id and parentType = Position.
+ */
+export function enrichPositionBracketOrders(
+    orders: TradeServerOrder[],
+    positions: TradeServerPosition[]
+): TradeServerOrder[] {
+    const positionByCreatingOrderId = new Map(positions.map((position) => [position.Ci, position]));
+
+    const enriched = orders.map((order) => {
+        if (order.ppi !== undefined || order.poi === undefined || !isPositionBracketOrderType(order.t)) {
+            return order;
+        }
+
+        const position = positionByCreatingOrderId.get(order.poi);
+        if (!position) {
+            return order;
+        }
+
+        return { ...order, ppi: position.id };
+    });
+
+    const result = [...enriched];
+
+    for (const position of positions) {
+        const oppositeSide: 'buy' | 'sell' = position.S === 'buy' ? 'sell' : 'buy';
+
+        if (position.sl !== undefined && !positionHasStopBracket(result, position.id)) {
+            result.push(buildSyntheticStopOrder(position, oppositeSide));
+        }
+        if (position.tp !== undefined && !positionHasTakeProfitBracket(result, position.id)) {
+            result.push(buildSyntheticTakeProfitOrder(position, oppositeSide));
+        }
+    }
+
+    return result;
+}
+
 /**
  * Transform Trade Server orders to TradingView format
  * @param orders - Array of Trade Server orders
  * @returns Array of TradingView Order objects
  */
 export function transformOrders(orders: TradeServerOrder[]): Order[] {
-    return orders.map((order) => ({
-        id: order.id.toString(),
-        symbol: order.s,
-        brokerSymbol: order.s,
-        type: mapOrderType(order.t),
-        side: order.S === 'buy' ? Side.Buy : Side.Sell,
-        qty: order.q,
-        status: mapOrderStatus(order.st),
-        limitPrice: order.lp,
-        stopPrice: order.sp,
-        avg: order.ap || 0,
-        filledQty: order.fq || 0,
-        parentId: order.poi,
-        duration: mapTimeInForce(order.tif),
-        time: formatTimestamp(order.C),
-    }));
+    return orders.map((order) => {
+        const parent =
+            order.ppi !== undefined
+                ? { parentId: order.ppi.toString(), parentType: ParentType.Position as number }
+                : order.poi !== undefined
+                  ? { parentId: order.poi.toString(), parentType: ParentType.Order as number }
+                  : {};
+
+        return {
+            id: order.id.toString(),
+            symbol: order.s,
+            brokerSymbol: order.s,
+            type: mapOrderType(order.t),
+            side: order.S === 'buy' ? Side.Buy : Side.Sell,
+            qty: order.q,
+            status: mapOrderStatus(order.st),
+            limitPrice: order.lp,
+            stopPrice: order.sp,
+            avg: order.ap || 0,
+            filledQty: order.fq || 0,
+            ...parent,
+            duration: mapTimeInForce(order.tif),
+            time: formatTimestamp(order.C),
+        };
+    });
 }
 
 /**

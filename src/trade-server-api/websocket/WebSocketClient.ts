@@ -44,6 +44,8 @@ export class WebSocketClient {
     private reconnectAttempts = 0;
     private log = logger.child('WebSocketClient');
     private isConnecting = false;
+    private reconnectListeners = new Set<() => void>();
+    private manuallyClosed = false;
 
     constructor(options: WebSocketClientOptions) {
         this.options = {
@@ -74,6 +76,16 @@ export class WebSocketClient {
     }
 
     /**
+     * Register a callback fired after auto-reconnect succeeds.
+     * Returns a disposer that removes the listener.
+     * Does not fire on manual disconnect() → connect() — caller drives that.
+     */
+    onReconnect(cb: () => void): () => void {
+        this.reconnectListeners.add(cb);
+        return () => this.reconnectListeners.delete(cb);
+    }
+
+    /**
      * Connect to WebSocket
      */
     async connect(): Promise<void> {
@@ -88,6 +100,7 @@ export class WebSocketClient {
         }
 
         this.isConnecting = true;
+        this.manuallyClosed = false;
 
         return new Promise((resolve, reject) => {
             try {
@@ -95,11 +108,23 @@ export class WebSocketClient {
                 this.ws = new WebSocket(this.options.url);
 
                 this.ws.onopen = () => {
+                    // Snapshot before resetting reconnectAttempts — otherwise the
+                    // first reconnect fires with attempts === 0 and skips listeners.
+                    const wasReconnect = this.reconnectAttempts > 0;
                     this.log.info('WebSocket connected');
                     this.isConnecting = false;
                     this.reconnectAttempts = 0;
                     this.startHeartbeat();
                     this.subscriptions.notify('connected', {});
+                    if (wasReconnect) {
+                        for (const cb of this.reconnectListeners) {
+                            try {
+                                cb();
+                            } catch (err) {
+                                this.log.error('onReconnect listener threw', err);
+                            }
+                        }
+                    }
                     resolve();
                 };
 
@@ -124,7 +149,7 @@ export class WebSocketClient {
                     this.stopHeartbeat();
                     this.subscriptions.notify('disconnected', { code: event.code, reason: event.reason });
 
-                    if (this.options.autoReconnect) {
+                    if (this.options.autoReconnect && !this.manuallyClosed) {
                         this.scheduleReconnect();
                     }
                 };
@@ -149,6 +174,12 @@ export class WebSocketClient {
      * Disconnect from WebSocket
      */
     disconnect(): void {
+        // Block the onclose handler from auto-reconnecting, and reset the
+        // attempt counter so any subsequent manual connect() opens cleanly
+        // without being mistaken for a reconnect (which would fire listeners).
+        this.manuallyClosed = true;
+        this.reconnectAttempts = 0;
+
         this.stopHeartbeat();
         this.cancelReconnect();
 

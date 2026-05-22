@@ -58,6 +58,7 @@ export class AccountService {
     private collateralWatchedValue!: IWatchedValue<number>;
 
     private accountDetailsChangeDelegate!: IDelegate<(data: {}) => void>;
+    private equityUpdateSubscribed = false;
 
     private accountProfileData: Array<{ id: string; field: string; value: string }> = [];
     private transferHistoryData: Array<{
@@ -165,8 +166,20 @@ export class AccountService {
                     pl: state.pl,
                     margin: state.m,
                 });
+
+                if (this.equityUpdateSubscribed && state.e !== undefined) {
+                    this.host.equityUpdate(state.e);
+                }
             }
         }
+    }
+
+    setEquityUpdateSubscribed(subscribed: boolean): void {
+        this.equityUpdateSubscribed = subscribed;
+    }
+
+    getEquity(): number {
+        return this.equityWatchedValue.value();
     }
 
     recalculateAMData(positions: unknown[]): void {
