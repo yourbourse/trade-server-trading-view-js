@@ -21,7 +21,7 @@ import Datafeed from './datafeed/datafeed.js';
 import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
 import { BrokerApi } from './broker-api/broker-api.js';
-import { isAuthenticated, signOut, getUserCredentials } from './utils/auth.js';
+import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
 
@@ -160,8 +160,7 @@ class TradingApp {
                 logger.error('Authentication failed, redirecting to sign-in page...');
                 // Clear invalid credentials
                 sessionStorage.removeItem('userCredentials');
-                sessionStorage.removeItem('apiKey');
-                sessionStorage.removeItem('signingToken');
+                clearStoredTokens();
                 // Redirect to sign-in
                 redirectToSignIn();
                 return;
@@ -182,13 +181,10 @@ class TradingApp {
             const response = await this.tradeServerClient.auth.signIn(username);
             logger.info('Authentication successful:', response);
 
-            // Store new tokens in sessionStorage
-            if (response?.token) {
-                sessionStorage.setItem('apiKey', response.token);
-            }
-            if (response?.signingToken) {
-                sessionStorage.setItem('signingToken', response.signingToken);
-            }
+            // Persist apiKey, signingToken, and expiration. The expiration
+            // seeds TradeServerClient's refresh scheduler, which is installed
+            // at the end of connect() right after this call.
+            persistApiToken(response);
         } catch (error) {
             logger.error('Authentication failed:', error);
             throw error;
