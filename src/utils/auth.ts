@@ -19,8 +19,18 @@ const TOKEN_KEYS = {
  * Persist a fresh ApiToken to sessionStorage. Single source of truth for
  * writing apiKey / signingToken / expiration — all callers (signin, re-auth,
  * scheduled refresh) go through here.
+ *
+ * Token rotation is atomic by contract: all three fields are required per the
+ * OpenAPI spec, and HMAC signing combines apiKey + signingToken, so a partial
+ * write would leave us with a half-rotated state where every subsequent
+ * request silently fails signature verification. If the server ever violates
+ * the contract, refuse the whole write and let the caller's error path run
+ * (which for the scheduled refresh signs the user out).
  */
 export function persistApiToken(token: ApiToken): void {
+    if (!token.token || !token.signingToken || !token.expiration) {
+        throw new Error('Malformed ApiToken from server; refusing to persist partial state');
+    }
     sessionStorage.setItem(TOKEN_KEYS.apiKey, token.token);
     sessionStorage.setItem(TOKEN_KEYS.signingToken, token.signingToken);
     sessionStorage.setItem(TOKEN_KEYS.expiration, String(token.expiration));
