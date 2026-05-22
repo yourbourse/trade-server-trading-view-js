@@ -268,6 +268,7 @@ class TradingApp {
             fullscreen: CONFIG.tradingView.fullscreen,
             autosize: CONFIG.tradingView.autosize,
             theme: CONFIG.tradingView.theme,
+            widgetbar: CONFIG.tradingView.widgetbar,
 
             // Additional settings
             timezone: 'Etc/UTC',
