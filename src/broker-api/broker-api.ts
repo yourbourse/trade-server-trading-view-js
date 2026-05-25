@@ -29,7 +29,6 @@ import {
     PositionService,
     TradeHistoryService,
     AccountService,
-    BracketService,
     UpdateService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
@@ -59,7 +58,6 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private positionService: PositionService;
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
-    private bracketService: BracketService;
     private updateService: UpdateService;
 
     public constructor(
@@ -79,7 +77,6 @@ export class BrokerApi extends AbstractBrokerMinimal {
         this.positionService = new PositionService(this.api);
         this.tradeHistoryService = new TradeHistoryService(this.api);
         this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
-        this.bracketService = new BracketService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),
             onGetCachedPositions: () => this.positionService.getCachedPositions(),
@@ -87,15 +84,14 @@ export class BrokerApi extends AbstractBrokerMinimal {
             onPositionCacheUpdate: (positions) => this.positionService.setCachedPositions(positions),
             onAccountStateUpdate: (data) => this.accountService.handleAccountStateUpdate(data),
             onRecalculateAMData: () => this.accountService.recalculateAMData(this.positionService.getCachedPositions()),
-            onBracketActivation: (orderId) => this.bracketService.activateBracketsForFilledOrder(orderId),
             onMergeOrderUpdate: (existing, incoming, positions) =>
                 this.orderService.mergeWebSocketOrderUpdate(existing, incoming, positions),
             onApplyServerPositionUpdate: (incoming) => this.positionService.applyServerPositionUpdate(incoming),
             onSyncBracketOrdersFromPosition: (position) => this.orderService.syncBracketOrdersFromPosition(position),
+            onRefreshOrdersCache: () => this.orderService.refreshCachedOrders(),
         });
 
         this.accountService.initializeAccountData();
-        this.bracketService.checkOrphanedBrackets();
         this.updateService.subscribeToUpdates();
     }
 
@@ -203,9 +199,14 @@ export class BrokerApi extends AbstractBrokerMinimal {
         this.host.setAccountManagerVisibilityMode('normal' as any);
 
         const result = await this.orderService.placeOrder(preOrder);
+
         if (result.orderId) {
-            this.bracketService.storeBracketsForOrder(result.orderId, preOrder);
+            const order = this.orderService.getCachedOrders().find((o) => o.id === result.orderId);
+            if (order) {
+                this.host.orderUpdate?.(order);
+            }
         }
+
         return result;
     }
 

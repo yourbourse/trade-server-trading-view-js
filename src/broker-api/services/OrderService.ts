@@ -29,6 +29,15 @@ export class OrderService {
         this.cachedOrders = [];
     }
 
+    upsertCachedOrder(order: Order): void {
+        const index = this.cachedOrders.findIndex((o) => o.id === order.id);
+        if (index >= 0) {
+            this.cachedOrders[index] = order;
+        } else {
+            this.cachedOrders.push(order);
+        }
+    }
+
     findPositionStopBracketOrder(positionId: string): Order | undefined {
         return this.cachedOrders.find((order) => {
             const bracket = order as Order & { parentId?: string; parentType?: number };
@@ -227,14 +236,10 @@ export class OrderService {
         return order;
     }
 
-    async getAllOrders(): Promise<Order[]> {
-        logger.debug('getAllOrders');
+    async refreshCachedOrders(): Promise<Order[]> {
+        logger.debug('refreshCachedOrders');
 
         try {
-            if (this.cachedOrders.length > 0) {
-                return this.cachedOrders;
-            }
-
             const [workingOrders, historicalOrders] = await Promise.all([
                 this.api.trading.getAllOrders({}),
                 this.api.trading.getAllOrderHistory({}),
@@ -258,8 +263,18 @@ export class OrderService {
 
             return this.cachedOrders;
         } catch (error) {
-            handleApiError(error, 'Error getting orders');
+            handleApiError(error, 'Error refreshing orders');
         }
+    }
+
+    async getAllOrders(): Promise<Order[]> {
+        logger.debug('getAllOrders');
+
+        if (this.cachedOrders.length > 0) {
+            return this.cachedOrders;
+        }
+
+        return this.refreshCachedOrders();
     }
 
     async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {
@@ -300,7 +315,10 @@ export class OrderService {
                 throw new Error('Order placement failed');
             }
 
-            this.cachedOrders = [];
+            const [newOrder] = transformOrders([result]) as Order[];
+            if (newOrder) {
+                this.upsertCachedOrder(newOrder);
+            }
 
             return {
                 orderId: result.id.toString(),
