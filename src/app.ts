@@ -16,7 +16,7 @@ import type {
     TradingTerminalWidgetOptions,
 } from 'charting_library/charting_library.js';
 
-import CONFIG from './config.js';
+import CONFIG, { POPULAR_SYMBOLS } from './config.js';
 import Datafeed from './datafeed/datafeed.js';
 import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
@@ -124,8 +124,10 @@ class TradingApp {
             // Initialize Datafeed (now includes both chart and quotes API)
             this.datafeed = new Datafeed(this.tradeServerClient);
 
+            const initialSymbol = await this.pickInitialSymbol();
+
             // Initialize TradingView Widget
-            this.initTradingViewWidget();
+            this.initTradingViewWidget(initialSymbol);
 
             logger.info('Trading Application initialized successfully');
         } catch (error: unknown) {
@@ -193,9 +195,31 @@ class TradingApp {
     }
 
     /**
+     * Pick the initial chart symbol from the broker's catalog, preferring the
+     * standard FX majors in priority order. Falls back to the first symbol
+     * returned by the API, then to 'EURUSD' if the API call fails.
+     */
+    private async pickInitialSymbol(): Promise<string> {
+        if (!this.tradeServerClient) {
+            throw new Error('TradeServerClient not initialized');
+        }
+        try {
+            const { symbols } = await this.tradeServerClient.marketData.getSymbols();
+            const first = symbols?.[0];
+            if (!first) return 'EURUSD';
+            const available = new Set(symbols.map((s) => s.n));
+            const popular = POPULAR_SYMBOLS.find((p) => available.has(p));
+            return popular ?? first.n;
+        } catch (err) {
+            logger.warn('Failed to fetch symbols for initial pick, falling back to EURUSD:', err);
+            return 'EURUSD';
+        }
+    }
+
+    /**
      * Initialize TradingView Widget
      */
-    initTradingViewWidget() {
+    initTradingViewWidget(symbol: string) {
         // Ensure datafeed is initialized
         if (!this.datafeed) {
             throw new Error('Datafeed is not initialized');
@@ -261,7 +285,7 @@ class TradingApp {
         };
 
         const widgetOptions: TradingTerminalWidgetOptions = {
-            symbol: 'EURUSD', // Default symbol
+            symbol,
             datafeed: this.datafeed,
             interval: '1' as ResolutionString, // Default interval
             container: CONFIG.tradingView.container!,
