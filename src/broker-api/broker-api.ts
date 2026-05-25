@@ -88,6 +88,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
                 this.orderService.mergeWebSocketOrderUpdate(existing, incoming, positions),
             onApplyServerPositionUpdate: (incoming) => this.positionService.applyServerPositionUpdate(incoming),
             onSyncBracketOrdersFromPosition: (position) => this.orderService.syncBracketOrdersFromPosition(position),
+            onRefreshOrdersCache: () => this.orderService.refreshCachedOrders(),
         });
 
         this.accountService.initializeAccountData();
@@ -197,7 +198,16 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.host.setAccountManagerVisibilityMode('normal' as any);
 
-        return this.orderService.placeOrder(preOrder);
+        const result = await this.orderService.placeOrder(preOrder);
+
+        if (result.orderId) {
+            const order = this.orderService.getCachedOrders().find((o) => o.id === result.orderId);
+            if (order) {
+                this.host.orderUpdate?.(order);
+            }
+        }
+
+        return result;
     }
 
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {

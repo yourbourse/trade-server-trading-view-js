@@ -20,6 +20,7 @@ export class UpdateService {
     private onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
     private onApplyServerPositionUpdate: (incoming: Position) => Position;
     private onSyncBracketOrdersFromPosition: (position: Position) => Order[];
+    private onRefreshOrdersCache: () => Promise<Order[]>;
 
     constructor(
         api: TradeServerClient,
@@ -34,6 +35,7 @@ export class UpdateService {
             onMergeOrderUpdate: (existing: Order | undefined, incoming: Order, positions: Position[]) => Order;
             onApplyServerPositionUpdate: (incoming: Position) => Position;
             onSyncBracketOrdersFromPosition: (position: Position) => Order[];
+            onRefreshOrdersCache: () => Promise<Order[]>;
         }
     ) {
         this.api = api;
@@ -47,6 +49,7 @@ export class UpdateService {
         this.onMergeOrderUpdate = callbacks.onMergeOrderUpdate;
         this.onApplyServerPositionUpdate = callbacks.onApplyServerPositionUpdate;
         this.onSyncBracketOrdersFromPosition = callbacks.onSyncBracketOrdersFromPosition;
+        this.onRefreshOrdersCache = callbacks.onRefreshOrdersCache;
     }
 
     subscribeToUpdates(): void {
@@ -111,8 +114,8 @@ export class UpdateService {
         }
 
         if (hasTerminalOrders) {
-            logger.info('Terminal order(s) detected, clearing cache and forcing full refresh');
-            this.onOrderCacheUpdate([]);
+            logger.info('Terminal order(s) detected, refreshing orders before full update');
+            await this.onRefreshOrdersCache();
             if (this.host?.ordersFullUpdate) {
                 this.host.ordersFullUpdate();
             }
