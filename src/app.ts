@@ -16,7 +16,7 @@ import type {
     TradingTerminalWidgetOptions,
 } from 'charting_library/charting_library.js';
 
-import CONFIG from './config.js';
+import CONFIG, { POPULAR_SYMBOLS } from './config.js';
 import Datafeed from './datafeed/datafeed.js';
 import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
@@ -85,6 +85,7 @@ class TradingApp {
     datafeed: Datafeed | null;
     widget: IChartingLibraryWidget | null;
     brokerAPI: BrokerApi | null;
+    private autoSaveHandler: (() => void) | null = null;
 
     constructor() {
         this.tradeServerClient = null;
@@ -124,8 +125,26 @@ class TradingApp {
             // Initialize Datafeed (now includes both chart and quotes API)
             this.datafeed = new Datafeed(this.tradeServerClient);
 
+            const storageKey = `tvChartState:${CONFIG.tradeServer.user.login}:${encodeURIComponent(CONFIG.tradeServer.server)}`;
+            let savedData: object | null = null;
+            try {
+                const raw = localStorage.getItem(storageKey);
+                if (raw) {
+                    const parsed: unknown = JSON.parse(raw);
+                    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                        savedData = parsed;
+                    } else {
+                        logger.warn('Saved chart state has invalid shape, ignoring');
+                    }
+                }
+            } catch (err) {
+                logger.warn('Failed to read saved chart state, ignoring:', err);
+            }
+
+            const initialSymbol = savedData ? null : await this.pickInitialSymbol();
+
             // Initialize TradingView Widget
-            this.initTradingViewWidget();
+            this.initTradingViewWidget(initialSymbol, savedData, storageKey);
 
             logger.info('Trading Application initialized successfully');
         } catch (error: unknown) {
@@ -193,9 +212,31 @@ class TradingApp {
     }
 
     /**
+     * Pick the initial chart symbol from the broker's catalog, preferring the
+     * standard FX majors in priority order. Falls back to the first symbol
+     * returned by the API, then to 'EURUSD' if the API call fails.
+     */
+    private async pickInitialSymbol(): Promise<string> {
+        if (!this.tradeServerClient) {
+            throw new Error('TradeServerClient not initialized');
+        }
+        try {
+            const { symbols } = await this.tradeServerClient.marketData.getSymbols();
+            const first = symbols?.[0];
+            if (!first) return 'EURUSD';
+            const available = new Set(symbols.map((s) => s.n));
+            const popular = POPULAR_SYMBOLS.find((p) => available.has(p));
+            return popular ?? first.n;
+        } catch (err) {
+            logger.warn('Failed to fetch symbols for initial pick, falling back to EURUSD:', err);
+            return 'EURUSD';
+        }
+    }
+
+    /**
      * Initialize TradingView Widget
      */
-    initTradingViewWidget() {
+    initTradingViewWidget(symbol: string | null, savedData: object | null, storageKey: string) {
         // Ensure datafeed is initialized
         if (!this.datafeed) {
             throw new Error('Datafeed is not initialized');
@@ -261,7 +302,9 @@ class TradingApp {
         };
 
         const widgetOptions: TradingTerminalWidgetOptions = {
-            symbol: 'EURUSD', // Default symbol
+            ...(symbol !== null && { symbol }),
+            ...(savedData && { saved_data: savedData }),
+            auto_save_delay: 5,
             datafeed: this.datafeed,
             interval: '1' as ResolutionString, // Default interval
             container: CONFIG.tradingView.container!,
@@ -350,6 +393,17 @@ class TradingApp {
             } else {
                 logger.info('✅ Broker API is initialized:', this.brokerAPI);
             }
+
+            this.autoSaveHandler = () => {
+                this.widget!.save((state: object) => {
+                    try {
+                        localStorage.setItem(storageKey, JSON.stringify(state));
+                    } catch (err) {
+                        logger.warn('Failed to persist chart state:', err);
+                    }
+                });
+            };
+            this.widget!.subscribe('onAutoSaveNeeded', this.autoSaveHandler);
         });
     }
 
@@ -393,6 +447,10 @@ class TradingApp {
             this.tradeServerClient.disconnect();
         }
         if (this.widget) {
+            if (this.autoSaveHandler) {
+                this.widget.unsubscribe('onAutoSaveNeeded', this.autoSaveHandler);
+                this.autoSaveHandler = null;
+            }
             this.widget.remove();
         }
     }

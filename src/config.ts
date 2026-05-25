@@ -121,3 +121,13 @@ const CONFIG: AppConfig = {
 };
 
 export default CONFIG;
+
+export const POPULAR_SYMBOLS: readonly string[] = [
+    'EURUSD',
+    'USDJPY',
+    'GBPUSD',
+    'USDCHF',
+    'AUDUSD',
+    'USDCAD',
+    'NZDUSD',
+];
