@@ -266,7 +266,7 @@ websocket: {
     intervalMapping: {
         '1': '1M',   '5': '5M',   '15': '15M',
         '30': '30M', '60': '1H',  '240': '4H',
-        'D': 'D',    'W': 'W',    'M': 'M'
+        'D': 'D', '1D': 'D', 'W': 'W', '1W': 'W', 'M': 'M', '1M': 'M'
     },
     
     // Auto-subscribe on connection
