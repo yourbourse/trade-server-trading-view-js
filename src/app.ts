@@ -309,13 +309,13 @@ class TradingApp {
                         value: 'ioc',
                         name: 'IOC',
                         description: 'Immediate or Cancel',
-                        supportedOrderTypes: [OrderType.Market],
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'fok',
                         name: 'FOK',
                         description: 'Fill or Kill',
-                        supportedOrderTypes: [OrderType.Market],
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'gtd',
