@@ -211,12 +211,14 @@ export class PositionService {
                 throw new Error('Position not found');
             }
 
+            const tif = await this.resolveCloseTif(position.s);
+
             const reverseOrder: PlaceOrder = {
                 s: position.s,
                 q: position.q * 2,
                 S: position.S === 'buy' ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'IOC',
+                tif,
                 pi: position.id,
             };
 
