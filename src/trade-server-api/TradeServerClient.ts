@@ -26,6 +26,9 @@ import type {
 } from './types/index.js';
 import { deriveServerUrls } from '../utils/serverUrl.js';
 import { logger } from '../utils/logger.js';
+import { persistApiToken, getTokenExpiration, signOut } from '../utils/auth.js';
+
+const TOKEN_REFRESH_SAFETY_MARGIN_MS = 60_000;
 
 /**
  * Main Trade Server API Client
@@ -59,6 +62,11 @@ export class TradeServerClient {
 
     // WebSocket
     private wsClient: WebSocketClient | null = null;
+
+    // Token refresh scheduler
+    private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    private isRefreshing = false;
+    private visibilityListener: (() => void) | null = null;
 
     // Logging
     private log = logger.child('TradeServerClient');
@@ -135,12 +143,24 @@ export class TradeServerClient {
         if (this.config.websocket.autoSubscribe) {
             await this.autoSubscribe();
         }
+
+        // Activate background token refresh if we have a persisted expiration.
+        // Missing expiration (legacy session, or signin path that hasn't been
+        // updated) is handled gracefully — the scheduler simply doesn't run.
+        const expiration = getTokenExpiration();
+        if (expiration !== null) {
+            this.scheduleTokenRefresh(expiration);
+            this.installVisibilityListener();
+        } else {
+            this.log.debug('No token expiration in sessionStorage; refresh scheduler not installed');
+        }
     }
 
     /**
      * Disconnect WebSocket
      */
     disconnect(): void {
+        this.stopTokenRefresh();
         if (this.wsClient) {
             this.wsClient.disconnect();
             this.wsClient = null;
@@ -149,10 +169,121 @@ export class TradeServerClient {
     }
 
     /**
+     * Schedule a single token refresh to fire SAFETY_MARGIN before expiry.
+     * Replaces any previously scheduled timer.
+     */
+    private scheduleTokenRefresh(expirationMicros: number): void {
+        const expirationMs = Math.floor(expirationMicros / 1000);
+        const delayMs = Math.max(0, expirationMs - Date.now() - TOKEN_REFRESH_SAFETY_MARGIN_MS);
+
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+        }
+        this.refreshTimer = setTimeout(() => void this.runScheduledRefresh(), delayMs);
+        this.log.info(
+            `Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`
+        );
+    }
+
+    /**
+     * Perform a token refresh. Re-entry guard makes it safe to call from both
+     * the scheduled timer and the visibilitychange listener.
+     *
+     * On failure (network, 401, anything): sign the user out — chosen
+     * behaviour per the design (single-shot, no retries).
+     */
+    private async runScheduledRefresh(): Promise<void> {
+        if (this.isRefreshing) {
+            this.log.debug('Refresh already in flight; skipping re-entry');
+            return;
+        }
+        this.isRefreshing = true;
+        try {
+            this.log.info('Refreshing token...');
+            const token = await this.auth.refreshToken();
+
+            // If the user disconnected during the in-flight refresh, drop the
+            // result rather than persisting and rescheduling on a dead client.
+            if (!this.wsClient) {
+                this.log.debug('Disconnected during refresh; dropping result');
+                return;
+            }
+
+            persistApiToken(token);
+            this.rotateWebSocketAuth();
+            this.scheduleTokenRefresh(token.expiration);
+            this.log.info(
+                `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`
+            );
+        } catch (err) {
+            this.log.error('Token refresh failed, signing out:', err);
+            signOut();
+        } finally {
+            this.isRefreshing = false;
+        }
+    }
+
+    /**
+     * Propagate the rotated apiKey to the open WebSocket. The server
+     * authenticates each frame on X-YB-API-Key, so an in-place update is
+     * sufficient — no reconnect.
+     */
+    private rotateWebSocketAuth(): void {
+        if (!this.wsClient) return;
+        this.wsClient.setApiKey(this.user.apiKey);
+    }
+
+    /**
+     * Re-evaluate the schedule when the tab becomes visible. Browsers
+     * throttle setTimeout in background tabs (and don't fire across system
+     * sleep), so the original timer may already be late.
+     */
+    private installVisibilityListener(): void {
+        if (this.visibilityListener) return;
+        this.visibilityListener = () => {
+            if (document.visibilityState !== 'visible') return;
+            const expiration = getTokenExpiration();
+            if (expiration === null) return;
+            const expirationMs = Math.floor(expiration / 1000);
+            if (expirationMs - Date.now() <= TOKEN_REFRESH_SAFETY_MARGIN_MS) {
+                this.log.debug('Tab visible and within refresh margin; refreshing now');
+                void this.runScheduledRefresh();
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityListener);
+    }
+
+    /**
+     * Tear down the refresh timer and the visibility listener.
+     */
+    private stopTokenRefresh(): void {
+        if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+            this.refreshTimer = null;
+        }
+        if (this.visibilityListener) {
+            document.removeEventListener('visibilitychange', this.visibilityListener);
+            this.visibilityListener = null;
+        }
+    }
+
+    /**
      * Check if WebSocket is connected
      */
     isConnected(): boolean {
         return this.wsClient?.isConnected() ?? false;
+    }
+
+    /**
+     * Register a callback fired after the WebSocket auto-reconnects.
+     * Returns a disposer that removes the listener.
+     * Must be called after connect() — throws otherwise.
+     */
+    onReconnect(cb: () => void): () => void {
+        if (!this.wsClient) {
+            throw new Error('WebSocket not connected. Call connect() first.');
+        }
+        return this.wsClient.onReconnect(cb);
     }
 
     /**

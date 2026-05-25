@@ -30,8 +30,6 @@ const logger = createLogger({ prefix: '[Datafeed]' });
 
 interface QuoteSubscription {
     symbols: string[];
-    fastSymbols: string[];
-    callback: QuotesCallback;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     wsCallback: (data: any) => void;
 }
@@ -44,6 +42,12 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     private quoteSubscriptions: Map<string, QuoteSubscription>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private quotesCache: Map<string, any>;
+    // Per-symbol L1 listener tracking. Wire subscribe fires only on 0→1,
+    // wire unsubscribe only on 1→0. This is the dedupe that prevents the
+    // server's "Already exists" rejection when multiple widgets watch the
+    // same symbol.
+    private l1Listeners: Map<string, Set<string>>;
+    private reconnectRegistered: boolean;
 
     constructor(tradeServerClient: TradeServerClient) {
         logger.info('🏭️ Constructor called - initializing datafeed with quotes support');
@@ -51,6 +55,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.subscribers = {};
         this.quoteSubscriptions = new Map();
         this.quotesCache = new Map();
+        this.l1Listeners = new Map();
+        this.reconnectRegistered = false;
         logger.debug('✅ Datafeed implements:', {
             hasOnReady: typeof this.onReady === 'function',
             hasGetQuotes: typeof this.getQuotes === 'function',
@@ -241,6 +247,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         subscriberUID: string
     ): void {
         logger.debug('subscribeBars:', symbolInfo.name, resolution, subscriberUID);
+        this.ensureReconnectHandler();
 
         const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
         if (!interval) {
@@ -312,33 +319,46 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         logger.debug('unsubscribeBars:', subscriberUID);
 
         const subscriber = this.subscribers[subscriberUID];
-        if (subscriber) {
-            const { symbolInfo, resolution, candleCallback } = subscriber;
-
-            const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
-            if (!interval) {
-                delete this.subscribers[subscriberUID];
-                return;
-            }
-
-            // Remove event listener first to stop receiving updates immediately
-            if (candleCallback) {
-                this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
-            }
-
-            // Delete subscriber before unsubscribing to prevent race conditions
-            delete this.subscribers[subscriberUID];
-
-            // Unsubscribe from candles
-            this.api
-                .unsubscribeFromCandles(symbolInfo.name, interval)
-                .then(() => {
-                    logger.info(`Unsubscribed from candles: ${symbolInfo.name} ${interval}`);
-                })
-                .catch((error: unknown) => {
-                    logger.error(`Failed to unsubscribe from candles:`, error);
-                });
+        if (!subscriber) {
+            return;
         }
+
+        const { symbolInfo, resolution, candleCallback } = subscriber;
+        delete this.subscribers[subscriberUID];
+
+        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        if (!interval) {
+            delete this.subscribers[subscriberUID];
+            return;
+        }
+
+        // Unhook the local pub/sub callback unconditionally. During a transient
+        // disconnect (auto-reconnect mid-flight) wsClient still exists and the
+        // SubscriptionManager is live — if we skipped this, the callback would
+        // resume firing on a destroyed widget once reconnect lands. The getter
+        // throws only when wsClient is null (post-disconnect), which we treat
+        // as already-cleaned-up.
+        if (candleCallback) {
+            try {
+                this.api.subscriptions.unsubscribe(`candles_${symbolInfo.name}`, candleCallback);
+            } catch (error: unknown) {
+                logger.debug('unsubscribeBars: local subscription already torn down or unavailable', error);
+            }
+        }
+
+        if (!this.api.isConnected()) {
+            logger.debug('unsubscribeBars: WS not connected, skipping wire unsubscribe');
+            return;
+        }
+
+        this.api
+            .unsubscribeFromCandles(symbolInfo.name, interval)
+            .then(() => {
+                logger.info(`Unsubscribed from candles: ${symbolInfo.name} ${interval}`);
+            })
+            .catch((error: unknown) => {
+                logger.error(`Failed to unsubscribe from candles:`, error);
+            });
     }
 
     /**
@@ -371,8 +391,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     s: 'ok',
                     n: symbol,
                     v: {
-                        ch: 0,
-                        chp: 0,
+                        // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
+                        ch: quote.bc ? quote.bp - quote.bc : undefined,
+                        chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
                         short_name: symbol,
                         exchange: 'YourBourse',
                         description: symbol,
@@ -416,13 +437,14 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         listenerGUID: string
     ): void {
         logger.debug('subscribeQuotes:', { symbols, fastSymbols, listenerGUID });
+        this.ensureReconnectHandler();
 
-        const allSymbols = [...new Set([...symbols, ...fastSymbols])];
+        const dedupedSymbols = [...new Set([...symbols, ...fastSymbols])];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const wsCallback = (data: any) => {
             const { quote } = data;
-            if (!quote || !allSymbols.includes(quote.s)) {
+            if (!quote || !dedupedSymbols.includes(quote.s)) {
                 return;
             }
 
@@ -430,8 +452,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 s: 'ok',
                 n: quote.s,
                 v: {
-                    ch: 0,
-                    chp: 0,
+                    // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
+                    ch: quote.bc ? quote.bp - quote.bc : undefined,
+                    chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
                     short_name: quote.s,
                     exchange: 'YourBourse',
                     description: quote.s,
@@ -448,16 +471,23 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         };
 
         this.quoteSubscriptions.set(listenerGUID, {
-            symbols,
-            fastSymbols,
-            callback: onRealtimeCallback,
+            symbols: dedupedSymbols,
             wsCallback,
         });
 
         this.api.subscriptions.subscribe('quotes', wsCallback);
         this.api.subscriptions.subscribe('ticker', wsCallback);
 
-        logger.info(`Subscribed to quotes for ${allSymbols.length} symbols`);
+        // Per-symbol dedupe: only hit the wire on 0→1 listeners. The server
+        // holds one slot per (channel, symbol) and rejects duplicates with
+        // "Already exists". The local 'quotes'/'ticker' bus fans the one
+        // wire stream out to every registered wsCallback, so each widget
+        // still gets every update.
+        dedupedSymbols.forEach((symbol) => {
+            this.acquireL1(symbol, listenerGUID);
+        });
+
+        logger.info(`Subscribed to quotes for ${dedupedSymbols.length} symbols`);
     }
 
     /**
@@ -471,11 +501,118 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             return;
         }
 
-        this.api.subscriptions.unsubscribe('quotes', subscription.wsCallback);
-        this.api.subscriptions.unsubscribe('ticker', subscription.wsCallback);
         this.quoteSubscriptions.delete(listenerGUID);
 
+        // Unhook locals unconditionally so the callback can't resume firing on
+        // a destroyed widget if reconnect lands after this call. Throws only
+        // when wsClient is null (post-disconnect), which means nothing to do.
+        try {
+            this.api.subscriptions.unsubscribe('quotes', subscription.wsCallback);
+            this.api.subscriptions.unsubscribe('ticker', subscription.wsCallback);
+        } catch {
+            // wsClient torn down — nothing to unhook.
+        }
+
+        // Always release refcounts so the dedupe map stays consistent.
+        // releaseL1 guards its own wire call.
+        subscription.symbols.forEach((symbol) => {
+            this.releaseL1(symbol, listenerGUID);
+        });
+
         logger.info(`Unsubscribed from quotes for listener ${listenerGUID}`);
+    }
+
+    /**
+     * Add a listener for `symbol` and fire the wire subscribe only when the
+     * listener count goes 0 → 1. Concurrent calls from multiple widgets in
+     * the same tick all see the listener in the Set and skip the wire.
+     */
+    private acquireL1(symbol: string, listenerGUID: string): void {
+        const existing = this.l1Listeners.get(symbol);
+        if (existing) {
+            existing.add(listenerGUID);
+            return;
+        }
+        const ownSet = new Set([listenerGUID]);
+        this.l1Listeners.set(symbol, ownSet);
+        this.api
+            .subscribeToQuotes(symbol, true)
+            .then(() => logger.info(`Subscribed to L1: ${symbol}`))
+            .catch((err: unknown) => {
+                // Roll back only if our Set is still the one in the map.
+                // pendingRequests survive auto-reconnect, so a pre-disconnect
+                // subscribe can reject *after* handleReconnect() has cleared
+                // l1Listeners and a fresh acquire has installed a new Set —
+                // deleting unconditionally would wipe that valid state.
+                if (this.l1Listeners.get(symbol) !== ownSet) {
+                    logger.debug(`L1 subscribe rejection for ${symbol} is stale, ignoring`, err);
+                    return;
+                }
+                logger.warn(`Failed to subscribe to L1: ${symbol}, clearing local entry to allow retry`, err);
+                this.l1Listeners.delete(symbol);
+            });
+    }
+
+    /**
+     * Release a listener for `symbol`. Wire unsubscribe fires only on 1→0.
+     */
+    private releaseL1(symbol: string, listenerGUID: string): void {
+        const set = this.l1Listeners.get(symbol);
+        if (!set) return;
+        set.delete(listenerGUID);
+        if (set.size > 0) return;
+        this.l1Listeners.delete(symbol);
+        if (!this.api.isConnected()) return;
+        this.api
+            .unsubscribeFromQuotes(symbol)
+            .catch((err: unknown) => logger.debug(`Failed to unsubscribe from L1: ${symbol}`, err));
+    }
+
+    /**
+     * Defensive: register the WS reconnect handler on first TV subscribe call
+     * rather than in the constructor. The current app awaits connect() before
+     * constructing Datafeed, but as a library this class can be wired in
+     * other orders — registering eagerly would throw if wsClient isn't up yet.
+     */
+    private ensureReconnectHandler(): void {
+        if (this.reconnectRegistered) return;
+        // Register first, flip the flag only on success — otherwise a throw
+        // (e.g. called before TradeServerClient.connect() in non-current
+        // wiring) would latch reconnectRegistered=true and silently skip
+        // every later attempt, leaving replay broken.
+        this.api.onReconnect(() => this.handleReconnect());
+        this.reconnectRegistered = true;
+    }
+
+    /**
+     * After auto-reconnect the server's subscription view is empty. Reset
+     * local dedupe state and replay subscribes for every active TV listener.
+     */
+    private handleReconnect(): void {
+        logger.info('WS reconnected — replaying subscriptions');
+
+        // Local view must match the server's now-empty view.
+        this.l1Listeners.clear();
+
+        // Replay L1 per-listener; acquireL1 re-derives the wire-call set.
+        for (const [listenerGUID, sub] of this.quoteSubscriptions) {
+            sub.symbols.forEach((symbol) => this.acquireL1(symbol, listenerGUID));
+        }
+
+        // Replay candle subscriptions. Bars don't go through the dedupe map
+        // (rare collision in practice) — this is a straight per-listener replay.
+        for (const sub of Object.values(this.subscribers)) {
+            const interval = (CONFIG.websocket.intervalMapping[sub.resolution] || sub.resolution) as CandleInterval;
+            this.api
+                .subscribeToCandles(sub.symbolInfo.name, interval, true)
+                .catch((err: unknown) =>
+                    logger.warn(`Candle re-subscribe failed: ${sub.symbolInfo.name} ${interval}`, err)
+                );
+        }
+
+        logger.info(
+            `Reconnect replayed ${this.l1Listeners.size} L1 + ${Object.keys(this.subscribers).length} candle subscriptions`
+        );
     }
 }
 

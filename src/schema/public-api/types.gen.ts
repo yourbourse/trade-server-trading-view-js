@@ -5,6 +5,14 @@ export type ClientOptions = {
 };
 
 /**
+ * ApiErrorCode
+ *
+ * Numeric error code, returned as a string. The following table lists all possible values:
+ * | Code | Description                          | |------|--------------------------------------| | "0"  | Successful operation                 | | "1"  | Not found                            | | "2"  | Server is not ready                  | | "3"  | Invalid parameter                    | | "4"  | Invalid target                       | | "5"  | Invalid 'NextToken'                  | | "6"  | Invalid header                       | | "7"  | Invalid version                      | | "8"  | Internal error                       | | "9"  | Dependencies exist                   | | "10" | Already exists                       | | "11" | Invalid payload                      | | "12" | Not allowed                          | | "13" | Operation not permitted              | | "14" | Business logic error                 | | "15" | Invalid Id                           | | "16" | Data changed                         | | "17" | Identifier cannot be reused          | | "100"| No market depth                      | | "101"| Invalid market depth                 |
+ */
+export type ApiErrorCode = string;
+
+/**
  * A simplified representation of RFC 9457 "Problem Details for HTTP APIs"
  */
 export type ProblemDetails = {
@@ -16,10 +24,7 @@ export type ProblemDetails = {
      * A human-readable explanation specific to this occurrence of the problem.
      */
     detail?: string;
-    /**
-     * Error code number.
-     */
-    code?: string;
+    code?: ApiErrorCode;
 };
 
 /**
@@ -624,6 +629,14 @@ export type AccountState = {
      */
     m: number;
     /**
+     * Exchange Assets.
+     */
+    as: number;
+    /**
+     * Exchange Liabilities.
+     */
+    ls: number;
+    /**
      * Account currency
      */
     c: string;
@@ -1052,9 +1065,33 @@ export type Book = {
      */
     a: Array<BookItem>;
     /**
-     * Array of arrays with two numeric elements - price and volume. Sorted by `price` in ascending order.
+     * Array of arrays with two numeric elements - price and volume. Sorted by `price` in descending order.
      */
     b: Array<BookItem>;
+    /**
+     * Ask high - highest ask price for the day.
+     */
+    ah?: number;
+    /**
+     * Ask low - lowest ask price for the day.
+     */
+    al?: number;
+    /**
+     * Bid high - highest bid price for the day.
+     */
+    bh?: number;
+    /**
+     * Bid low - lowest bid price for the day.
+     */
+    bl?: number;
+    /**
+     * Bid close - last bid price of the previous trading day.
+     */
+    bc?: number;
+    /**
+     * Ask close - last ask price of the previous trading day.
+     */
+    ac?: number;
 };
 
 /**
@@ -1087,6 +1124,30 @@ export type Quote = {
      * Best ask size.
      */
     as: number;
+    /**
+     * Bid high - highest bid price for the day.
+     */
+    bh?: number;
+    /**
+     * Bid low - lowest bid price for the day.
+     */
+    bl?: number;
+    /**
+     * Ask high - highest ask price for the day.
+     */
+    ah?: number;
+    /**
+     * Ask low - lowest ask price for the day.
+     */
+    al?: number;
+    /**
+     * Bid close - last bid price of the previous trading day.
+     */
+    bc?: number;
+    /**
+     * Ask close - last ask price of the previous trading day.
+     */
+    ac?: number;
     /**
      * Timestamp (microseconds since the Unix epoch).
      */

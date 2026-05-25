@@ -71,6 +71,12 @@ const CONFIG: AppConfig = {
         autosize: true,
         theme: 'light',
         debug: true,
+        widgetbar: {
+            watchlist: true,
+            watchlist_settings: {
+                default_symbols: [],
+            },
+        },
     } as Partial<TradingTerminalWidgetOptions>,
 
     // Market Data Configuration

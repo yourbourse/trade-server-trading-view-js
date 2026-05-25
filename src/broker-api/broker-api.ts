@@ -20,13 +20,18 @@ import {
 import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
-import { ConnectionStatus, ParentType, Side } from './types';
-import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
+import { ConnectionStatus, OrderType, ParentType, Side } from './types';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
-import { handleApiError } from '@/utils/apiError';
-import { OrderService, PositionService, AccountService, BracketService, UpdateService } from './services/index.js';
+import {
+    OrderService,
+    PositionService,
+    TradeHistoryService,
+    AccountService,
+    BracketService,
+    UpdateService,
+} from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
@@ -52,6 +57,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private api: TradeServerClient;
     private orderService: OrderService;
     private positionService: PositionService;
+    private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private bracketService: BracketService;
     private updateService: UpdateService;
@@ -71,7 +77,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         this.orderService = new OrderService(this.api);
         this.positionService = new PositionService(this.api);
-        this.accountService = new AccountService(this.api, this.host);
+        this.tradeHistoryService = new TradeHistoryService(this.api);
+        this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
         this.bracketService = new BracketService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),
@@ -115,21 +122,67 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     public async symbolInfo(symbol: string): Promise<InstrumentInfo> {
-        const mintick = await this.host.getSymbolMinTick(symbol);
+        const symbolConfig = await this.api.marketData.getSymbolInfo(symbol);
+
+        // tz is explicit tick size; fallback derives it from decimal precision
+        const mintick = symbolConfig.tz ?? 1 / Math.pow(10, symbolConfig.dp);
+
         const pipSize = mintick;
-        const accountCurrencyRate = 1;
-        const pointValue = 1;
+
+        // tv = monetary value of 1 tick move per lot. Divide by lotSize to get per-unit value.
+        const lotSize = symbolConfig.l;
+        const pipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : 1;
+
+        const allowedOrderTypes: OrderType[] = [];
+        if (symbolConfig.M) {
+            allowedOrderTypes.push(OrderType.Market);
+        }
+        if (symbolConfig.L) {
+            allowedOrderTypes.push(OrderType.Limit);
+        }
+        if (symbolConfig.S) {
+            allowedOrderTypes.push(OrderType.Stop);
+        }
+        if (symbolConfig.SLi) {
+            allowedOrderTypes.push(OrderType.StopLimit);
+        }
+
+        const allowedDurations: string[] = [];
+        if (symbolConfig.day) {
+            allowedDurations.push('day');
+        }
+        if (symbolConfig.gtc) {
+            allowedDurations.push('gtc');
+        }
+        if (symbolConfig.gtd) {
+            allowedDurations.push('gtd');
+        }
+        if (symbolConfig.ioc) {
+            allowedDurations.push('ioc');
+        }
+        if (symbolConfig.fok) {
+            allowedDurations.push('fok');
+        }
 
         return {
             qty: {
-                min: 1,
-                max: 1e12,
-                step: 1,
+                min: symbolConfig.min ,
+                max: symbolConfig.max || 1e12,
+                step: symbolConfig.i,
             },
-            pipValue: pipSize * pointValue * accountCurrencyRate || 1,
-            pipSize: pipSize,
+            pipValue,
+            pipSize,
             minTick: mintick,
-            description: '',
+            lotSize,
+            description: symbolConfig.d,
+            brokerSymbol: symbolConfig.n,
+            //type: 'forex',
+            currency: symbolConfig.p,
+            baseCurrency: symbolConfig.b,
+            quoteCurrency: symbolConfig.p,
+            bigPointValue: symbolConfig.tv && symbolConfig.tz ? symbolConfig.tv / symbolConfig.tz / lotSize : undefined,
+            ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
+            ...(allowedDurations.length > 0 && { allowedDurations }),
         };
     }
 
@@ -142,26 +195,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     async executions(symbol: string): Promise<Execution[]> {
-        logger.debug('executions for', symbol);
-
-        try {
-            const result = await this.api.trading.getTradeHistory({
-                symbolName: symbol,
-            } as TradeHistoryPageRequestFilter);
-            const trades = result.trades || [];
-
-            return trades.map((trade: Trade) => ({
-                id: trade.id.toString(),
-                symbol: trade.s,
-                brokerSymbol: trade.s,
-                price: trade.p,
-                qty: trade.q,
-                side: trade.S === 'buy' ? Side.Buy : Side.Sell,
-                time: Math.floor(trade.t / 1000),
-            }));
-        } catch (error) {
-            handleApiError(error, 'Error getting executions');
-        }
+        return this.tradeHistoryService.getExecutions(symbol);
     }
 
     public async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {

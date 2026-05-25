@@ -9,6 +9,7 @@ import type {
     OrderStatus,
     OrderType,
     Position as TradeServerPosition,
+    Trade as TradeServerTrade,
     TimeInForce,
 } from '../schema/public-api/types.gen';
 
@@ -84,7 +85,7 @@ export function mapOrderStatus(status: OrderStatus): number {
  * @param tif - Trade Server TimeInForce
  * @returns TradingView duration object
  */
-export function mapTimeInForce(tif: TimeInForce): { type: string } {
+export function mapTimeInForce(tif: TimeInForce, tt?: number): { type: string; datetime?: number } {
     const tifMap: Record<TimeInForce, { type: string }> = {
         GTC: { type: 'gtc' },
         Day: { type: 'day' },
@@ -93,7 +94,12 @@ export function mapTimeInForce(tif: TimeInForce): { type: string } {
         GTD: { type: 'gtd' },
         Ms: { type: 'gtc' },
     };
-    return tifMap[tif] || { type: 'gtc' };
+    const result: { type: string; datetime?: number } = tifMap[tif] || { type: 'gtc' };
+    if (tif === 'GTD' && tt) {
+        // API tt is microseconds, TradingView datetime is milliseconds
+        result.datetime = Math.floor(tt / 1000);
+    }
+    return result;
 }
 
 /**
@@ -237,7 +243,7 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
             avg: order.ap || 0,
             filledQty: order.fq || 0,
             ...parent,
-            duration: mapTimeInForce(order.tif),
+            duration: mapTimeInForce(order.tif, order.tt),
             time: formatTimestamp(order.C),
         };
     });
@@ -257,8 +263,29 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
         side: position.S === 'buy' ? Side.Buy : Side.Sell,
         avgPrice: position.p,
         pl: position.pl,
+        swap: position.sw,
         ...(position.sl !== undefined && { stopLoss: position.sl }),
         ...(position.tp !== undefined && { takeProfit: position.tp }),
         time: formatTimestamp(position.C),
+    }));
+}
+
+/**
+ * Transform Trade Server trades to Account Manager trade history rows
+ * @param trades - Array of Trade Server trades
+ * @returns Array of trade history table row objects
+ */
+export function transformTradeHistory(trades: TradeServerTrade[]) {
+    return trades.map((trade) => ({
+        id: trade.id.toString(),
+        tradeId: trade.id,
+        symbol: trade.s,
+        side: trade.S === 'buy' ? Side.Buy : Side.Sell,
+        qty: trade.q,
+        avgPrice: trade.p,
+        pl: trade.pl,
+        swap: trade.sw,
+        time: formatTimestamp(trade.t),
+        orderId: trade.oi.toString(),
     }));
 }
