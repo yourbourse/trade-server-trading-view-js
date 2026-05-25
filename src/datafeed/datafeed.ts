@@ -378,8 +378,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     s: 'ok',
                     n: symbol,
                     v: {
-                        ch: 0,
-                        chp: 0,
+                        // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
+                        ch: quote.bc ? quote.bp - quote.bc : undefined,
+                        chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
                         short_name: symbol,
                         exchange: 'YourBourse',
                         description: symbol,
@@ -438,8 +439,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 s: 'ok',
                 n: quote.s,
                 v: {
-                    ch: 0,
-                    chp: 0,
+                    // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
+                    ch: quote.bc ? quote.bp - quote.bc : undefined,
+                    chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
                     short_name: quote.s,
                     exchange: 'YourBourse',
                     description: quote.s,

@@ -11,6 +11,7 @@ import type {
     TradeCollection,
     TransferCollection,
     TransferRequestFilter,
+    Trade,
     TradeHistoryPageRequestFilter,
 } from '@/schema/public-api';
 import type { Symbol } from '@/types';
@@ -55,6 +56,7 @@ export interface ITradeServerApi {
     getAllOrders(filter?: Record<string, unknown>): Promise<Order[]>;
     getAllOrderHistory(filter?: Record<string, unknown>): Promise<Order[]>;
     getTradeHistory(filter?: TradeHistoryPageRequestFilter, nextToken?: string | null): Promise<TradeCollection>;
+    getAllTradeHistory(filter?: TradeHistoryPageRequestFilter): Promise<Trade[]>;
     getTransfersHistory(filter?: TransferRequestFilter, nextToken?: string | null): Promise<TransferCollection>;
 
     // User info

@@ -21,12 +21,17 @@ import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
 import { ConnectionStatus, OrderType, ParentType, Side } from './types';
-import type { Trade, TradeHistoryPageRequestFilter } from '../schema/public-api';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
-import { handleApiError } from '@/utils/apiError';
-import { OrderService, PositionService, AccountService, BracketService, UpdateService } from './services/index.js';
+import {
+    OrderService,
+    PositionService,
+    TradeHistoryService,
+    AccountService,
+    BracketService,
+    UpdateService,
+} from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
@@ -52,6 +57,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private api: TradeServerClient;
     private orderService: OrderService;
     private positionService: PositionService;
+    private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private bracketService: BracketService;
     private updateService: UpdateService;
@@ -71,7 +77,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         this.orderService = new OrderService(this.api);
         this.positionService = new PositionService(this.api);
-        this.accountService = new AccountService(this.api, this.host);
+        this.tradeHistoryService = new TradeHistoryService(this.api);
+        this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
         this.bracketService = new BracketService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),
@@ -188,26 +195,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     async executions(symbol: string): Promise<Execution[]> {
-        logger.debug('executions for', symbol);
-
-        try {
-            const result = await this.api.trading.getTradeHistory({
-                symbolName: symbol,
-            } as TradeHistoryPageRequestFilter);
-            const trades = result.trades || [];
-
-            return trades.map((trade: Trade) => ({
-                id: trade.id.toString(),
-                symbol: trade.s,
-                brokerSymbol: trade.s,
-                price: trade.p,
-                qty: trade.q,
-                side: trade.S === 'buy' ? Side.Buy : Side.Sell,
-                time: Math.floor(trade.t / 1000),
-            }));
-        } catch (error) {
-            handleApiError(error, 'Error getting executions');
-        }
+        return this.tradeHistoryService.getExecutions(symbol);
     }
 
     public async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {

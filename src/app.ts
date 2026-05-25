@@ -272,6 +272,7 @@ class TradingApp {
             fullscreen: CONFIG.tradingView.fullscreen,
             autosize: CONFIG.tradingView.autosize,
             theme: CONFIG.tradingView.theme,
+            widgetbar: CONFIG.tradingView.widgetbar,
 
             // Additional settings
             timezone: 'Etc/UTC',
@@ -308,13 +309,13 @@ class TradingApp {
                         value: 'ioc',
                         name: 'IOC',
                         description: 'Immediate or Cancel',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
+                        supportedOrderTypes: [OrderType.Market],
                     },
                     {
                         value: 'fok',
                         name: 'FOK',
                         description: 'Fill or Kill',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
+                        supportedOrderTypes: [OrderType.Market],
                     },
                     {
                         value: 'gtd',

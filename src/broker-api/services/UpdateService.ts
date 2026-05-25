@@ -156,6 +156,9 @@ export class UpdateService {
                     const index = cachedPositions.findIndex((p) => p.id === pos.id.toString());
                     if (index >= 0 && cachedPositions[index]) {
                         cachedPositions[index]['pl'] = pos.pl;
+                        if (pos.sw !== undefined) {
+                            cachedPositions[index]['swap'] = pos.sw;
+                        }
                         const updatedPosition = cachedPositions[index];
                         if (updatedPosition) {
                             positionsToNotify.push(updatedPosition);
