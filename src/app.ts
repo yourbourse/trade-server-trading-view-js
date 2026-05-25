@@ -24,6 +24,7 @@ import { BrokerApi } from './broker-api/broker-api.js';
 import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
+import { OrderType } from './broker-api/types.js';
 
 const logger = createLogger({ prefix: '[App]' });
 
@@ -244,6 +245,8 @@ class TradingApp {
             supportModifyOrderPrice: true,
             supportReversePosition: true,
             supportOrdersHistory: false,
+            supportStopLimitOrders: true,
+            supportModifyDuration: true,
             supportAddBracketsToExistingOrder: false,
             supportModifyBrackets: true,
             supportModifyOrderBrackets: true,
@@ -251,6 +254,7 @@ class TradingApp {
             supportOrderBrackets: true,
             supportPositionBrackets: true,
             showNotificationsLog: true,
+	    
         } as BrokerConfigFlags & {
             supportModifyOrderBrackets: boolean;
             supportModifyPositionBrackets: boolean;
@@ -268,6 +272,7 @@ class TradingApp {
             fullscreen: CONFIG.tradingView.fullscreen,
             autosize: CONFIG.tradingView.autosize,
             theme: CONFIG.tradingView.theme,
+            widgetbar: CONFIG.tradingView.widgetbar,
 
             // Additional settings
             timezone: 'Etc/UTC',
@@ -290,6 +295,11 @@ class TradingApp {
                 configFlags: brokerConfigFlags,
                 durations: [
                     {
+                        value: 'day',
+                        name: 'DAY',
+                        description: 'Day Order',
+                    },
+                    {
                         value: 'gtc',
                         name: 'GTC',
                         description: 'Good Till Cancelled',
@@ -299,11 +309,13 @@ class TradingApp {
                         value: 'ioc',
                         name: 'IOC',
                         description: 'Immediate or Cancel',
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'fok',
                         name: 'FOK',
                         description: 'Fill or Kill',
+                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
                     },
                     {
                         value: 'gtd',

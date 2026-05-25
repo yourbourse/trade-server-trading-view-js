@@ -274,6 +274,11 @@ export class OrderService {
                 tif: unmapTimeInForce(preOrder.duration),
             };
 
+            // GTD: convert TradingView datetime (milliseconds) to API tt (microseconds)
+            if (orderParams.tif === 'GTD' && preOrder.duration?.datetime) {
+                orderParams.tt = preOrder.duration.datetime * 1000;
+            }
+
             if (preOrder.limitPrice) {
                 orderParams.lp = preOrder.limitPrice;
             }
