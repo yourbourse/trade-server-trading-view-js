@@ -143,8 +143,11 @@ intervalMapping: {
   '60':  '1H',    // 1 hour
   '240': '4H',    // 4 hours
   'D':   'D',     // Daily
-  'W':   'W',     // Weekly
-  'M':   'M'      // Monthly
+  '1D':  'D',
+  'W':   'W',     // Weekly (shorthand)
+  '1W':  'W',     // Weekly
+  'M':   'M',     // Monthly (shorthand)
+  '1M':  'M'      // Monthly — TradingView "1M" is not API "1M" (one minute)
 }
 ```
 
@@ -204,7 +207,7 @@ marketData: {
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `historyResolutions` | `['1','5','15','30','60','240','D','W','M']` | Available chart timeframes in TradingView format |
+| `historyResolutions` | `['1','5','15','30','60','240','D','1W','1M']` | Available chart timeframes in TradingView format |
 
 These map to the Trade Server intervals via `websocket.intervalMapping`.
 
@@ -272,12 +275,12 @@ const CONFIG: AppConfig = {
     debug: false
   },
   marketData: {
-    historyResolutions: ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M']
+    historyResolutions: ['1', '5', '15', '30', '60', '240', 'D', '1W', '1M']
   },
   websocket: {
     intervalMapping: {
       '1': '1M', '5': '5M', '15': '15M', '30': '30M',
-      '60': '1H', '240': '4H', 'D': 'D', 'W': 'W', 'M': 'M'
+      '60': '1H', '240': '4H', 'D': 'D', '1D': 'D', 'W': 'W', '1W': 'W', 'M': 'M', '1M': 'M'
     },
     autoSubscribe: {
       orders: true,
