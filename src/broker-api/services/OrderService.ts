@@ -118,9 +118,9 @@ export class OrderService {
                 qty: position.qty,
                 status: OrderStatus.Working,
                 stopPrice: position.stopLoss,
+                avgPrice: position.stopLoss,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
@@ -138,7 +138,6 @@ export class OrderService {
                 limitPrice: position.takeProfit,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
