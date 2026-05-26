@@ -94,6 +94,18 @@ export const ordersPageColumns: OrderTableColumn[] = [
         id: 'id',
         dataFields: ['id'],
     },
+    {
+        label: 'Parent Order',
+        id: 'parentOrderId',
+        dataFields: ['parentOrderId'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Parent Position',
+        id: 'parentPositionId',
+        dataFields: ['parentPositionId'],
+        formatter: 'text' as StandardFormatterName,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
 
@@ -164,6 +176,13 @@ export const positionsPageColumns: AccountManagerColumn[] = [
         formatter: 'formatPrice' as StandardFormatterName,
     },
     {
+        label: 'Commission',
+        alignment: 'right',
+        id: 'commission',
+        dataFields: ['commission'],
+        formatter: 'fixed' as StandardFormatterName,
+    },
+    {
         label: 'Position ID',
         id: 'id',
         dataFields: ['id'],
@@ -230,6 +249,13 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
         id: 'orderId',
         dataFields: ['orderId'],
         formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Commission',
+        alignment: 'right',
+        id: 'commission',
+        dataFields: ['commission'],
+        formatter: 'fixed' as StandardFormatterName,
     },
     {
         label: 'Trade ID',
