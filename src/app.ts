@@ -285,6 +285,7 @@ class TradingApp {
             supportClosePosition: true,
             supportModifyOrderPrice: true,
             supportReversePosition: true,
+            supportNativeReversePosition: true,
             supportOrdersHistory: false,
             supportStopLimitOrders: true,
             supportModifyDuration: true,
