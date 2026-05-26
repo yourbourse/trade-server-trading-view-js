@@ -86,6 +86,7 @@ class TradingApp {
     widget: IChartingLibraryWidget | null;
     brokerAPI: BrokerApi | null;
     private autoSaveHandler: (() => void) | null = null;
+    private symbolChangedHandler: (() => void) | null = null;
 
     constructor() {
         this.tradeServerClient = null;
@@ -394,12 +395,13 @@ class TradingApp {
                 logger.info('✅ Broker API is initialized:', this.brokerAPI);
                 this.brokerAPI.setupMarketOrderTypeDefaults(() => this.widget?.activeChart()?.symbol());
                 try {
-                    this.widget!.activeChart().onSymbolChanged().subscribe(null, () => {
+                    this.symbolChangedHandler = () => {
                         const symbol = this.widget?.activeChart()?.symbol();
                         if (symbol) {
                             this.brokerAPI?.resetOrderTypeToMarket(symbol);
                         }
-                    });
+                    };
+                    this.widget!.activeChart().onSymbolChanged().subscribe(null, this.symbolChangedHandler);
                 } catch (err) {
                     logger.warn('Could not subscribe to symbol changes for order type defaults:', err);
                 }
@@ -454,6 +456,8 @@ class TradingApp {
      * Cleanup on app destroy
      */
     destroy() {
+        this.brokerAPI?.teardownMarketOrderTypeDefaults();
+
         if (this.tradeServerClient) {
             this.tradeServerClient.disconnect();
         }
@@ -461,6 +465,14 @@ class TradingApp {
             if (this.autoSaveHandler) {
                 this.widget.unsubscribe('onAutoSaveNeeded', this.autoSaveHandler);
                 this.autoSaveHandler = null;
+            }
+            if (this.symbolChangedHandler) {
+                try {
+                    this.widget.activeChart().onSymbolChanged().unsubscribeAll(null);
+                } catch {
+                    // chart may already be torn down
+                }
+                this.symbolChangedHandler = null;
             }
             this.widget.remove();
         }

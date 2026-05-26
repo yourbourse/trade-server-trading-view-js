@@ -60,6 +60,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private updateService: UpdateService;
+    private orderPanelVisibilityHandler: ((visible: boolean) => void) | null = null;
 
     public constructor(
         tradeServerClient: TradeServerClient,
@@ -335,8 +336,17 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     /**
      * Keep the order ticket on Market by default (TradingView otherwise remembers the last type).
+     * Idempotent: a second call tears down the previous subscription before re-subscribing.
      */
     public setupMarketOrderTypeDefaults(getSymbol: () => string | undefined): void {
+        const orderPanelVisibility = this.host.orderPanelVisibility?.();
+
+        // Tear down any previous subscription to avoid accumulation.
+        if (this.orderPanelVisibilityHandler && orderPanelVisibility) {
+            orderPanelVisibility.unsubscribe(this.orderPanelVisibilityHandler);
+            this.orderPanelVisibilityHandler = null;
+        }
+
         const applyForActiveSymbol = () => {
             const symbol = getSymbol();
             if (symbol) {
@@ -346,12 +356,22 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         applyForActiveSymbol();
 
-        const orderPanelVisibility = this.host.orderPanelVisibility?.();
-        orderPanelVisibility?.subscribe((visible: boolean) => {
-            if (visible) {
-                applyForActiveSymbol();
-            }
-        });
+        if (orderPanelVisibility) {
+            this.orderPanelVisibilityHandler = (visible: boolean) => {
+                if (visible) {
+                    applyForActiveSymbol();
+                }
+            };
+            orderPanelVisibility.subscribe(this.orderPanelVisibilityHandler);
+        }
+    }
+
+    /** Tear down subscriptions set up by {@link setupMarketOrderTypeDefaults}. */
+    public teardownMarketOrderTypeDefaults(): void {
+        if (this.orderPanelVisibilityHandler) {
+            this.host.orderPanelVisibility?.()?.unsubscribe(this.orderPanelVisibilityHandler);
+            this.orderPanelVisibilityHandler = null;
+        }
     }
 
     public chartContextMenuActions(
