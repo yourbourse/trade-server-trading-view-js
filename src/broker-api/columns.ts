@@ -163,6 +163,12 @@ export const positionsPageColumns: AccountManagerColumn[] = [
         dataFields: ['takeProfit'],
         formatter: 'formatPrice' as StandardFormatterName,
     },
+    {
+        label: 'Position ID',
+        id: 'id',
+        dataFields: ['id'],
+        formatter: 'text' as StandardFormatterName,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
 
