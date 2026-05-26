@@ -392,6 +392,17 @@ class TradingApp {
                 logger.error('This means TradingView did not recognize the datafeed as having quotes support');
             } else {
                 logger.info('✅ Broker API is initialized:', this.brokerAPI);
+                this.brokerAPI.setupMarketOrderTypeDefaults(() => this.widget?.activeChart()?.symbol());
+                try {
+                    this.widget!.activeChart().onSymbolChanged().subscribe(null, () => {
+                        const symbol = this.widget?.activeChart()?.symbol();
+                        if (symbol) {
+                            this.brokerAPI?.resetOrderTypeToMarket(symbol);
+                        }
+                    });
+                } catch (err) {
+                    logger.warn('Could not subscribe to symbol changes for order type defaults:', err);
+                }
             }
 
             this.autoSaveHandler = () => {

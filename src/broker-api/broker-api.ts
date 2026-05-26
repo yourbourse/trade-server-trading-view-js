@@ -32,6 +32,7 @@ import {
     UpdateService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
+import { applyMarketOrderTypeDefault } from '@/utils/tradingOrderDefaults.js';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -327,12 +328,41 @@ export class BrokerApi extends AbstractBrokerMinimal {
         return this.accountService.getAccountsMetainfo();
     }
 
+    /** Reset persisted order ticket type to Market for the given symbol. */
+    public resetOrderTypeToMarket(symbol: string): void {
+        applyMarketOrderTypeDefault(symbol, this.host);
+    }
+
+    /**
+     * Keep the order ticket on Market by default (TradingView otherwise remembers the last type).
+     */
+    public setupMarketOrderTypeDefaults(getSymbol: () => string | undefined): void {
+        const applyForActiveSymbol = () => {
+            const symbol = getSymbol();
+            if (symbol) {
+                this.resetOrderTypeToMarket(symbol);
+            }
+        };
+
+        applyForActiveSymbol();
+
+        const orderPanelVisibility = this.host.orderPanelVisibility?.();
+        orderPanelVisibility?.subscribe((visible: boolean) => {
+            if (visible) {
+                applyForActiveSymbol();
+            }
+        });
+    }
+
     public chartContextMenuActions(
-        _context: TradeContext,
+        context: TradeContext,
         _options?: DefaultContextMenuActionsParams | undefined
     ): Promise<ActionMetaInfo[]> {
         void _options;
-        return this.host.defaultContextMenuActions(_context);
+        if (context.symbol) {
+            this.resetOrderTypeToMarket(context.symbol);
+        }
+        return this.host.defaultContextMenuActions(context);
     }
 
     async closePosition(positionId: string, amount?: number, confirmId?: string): Promise<void> {
