@@ -8,6 +8,17 @@ import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
 
+function withStopDisplayPrice(order: Order, stopPrice: number): Order {
+    const hasFill = (order.filledQty ?? 0) > 0;
+    const shouldMirrorAvgPrice = order.type === OrderType.Stop && !hasFill;
+
+    return {
+        ...order,
+        stopPrice,
+        ...(shouldMirrorAvgPrice && { avgPrice: stopPrice }),
+    };
+}
+
 export class OrderService {
     private api: TradeServerClient;
     private cachedOrders: Order[];
@@ -118,9 +129,9 @@ export class OrderService {
                 qty: position.qty,
                 status: OrderStatus.Working,
                 stopPrice: position.stopLoss,
+                avgPrice: position.stopLoss,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
@@ -138,7 +149,6 @@ export class OrderService {
                 limitPrice: position.takeProfit,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
@@ -170,7 +180,7 @@ export class OrderService {
                     return [];
                 }
                 if (order.stopPrice !== position.stopLoss) {
-                    const changed = { ...order, stopPrice: position.stopLoss };
+                    const changed = withStopDisplayPrice(order, position.stopLoss);
                     updated.push(changed);
                     return [changed];
                 }
@@ -226,7 +236,7 @@ export class OrderService {
         }
 
         if (isStopBracketOrderType(order.type) && position.stopLoss !== undefined) {
-            return { ...order, stopPrice: position.stopLoss };
+            return withStopDisplayPrice(order, position.stopLoss);
         }
 
         if (order.type === OrderType.Limit && position.takeProfit !== undefined) {

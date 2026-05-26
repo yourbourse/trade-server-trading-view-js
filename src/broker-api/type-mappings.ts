@@ -3,11 +3,11 @@
  */
 
 import type { Order, Position } from '../../charting_library/charting_library';
-import { ParentType, Side } from './types';
+import { OrderType as TradingViewOrderType, ParentType, Side } from './types';
 import type {
     Order as TradeServerOrder,
     OrderStatus,
-    OrderType,
+    OrderType as TradeServerOrderType,
     Position as TradeServerPosition,
     Trade as TradeServerTrade,
     TimeInForce,
@@ -36,8 +36,8 @@ export function formatTimestamp(microseconds: number): string {
  * @param type - Trade Server OrderType
  * @returns TradingView order type number (1=Limit, 2=Market, 3=Stop, 4=StopLimit)
  */
-export function mapOrderType(type: OrderType): number {
-    const typeMap: Record<OrderType, number> = {
+export function mapOrderType(type: TradeServerOrderType): number {
+    const typeMap: Record<TradeServerOrderType, number> = {
         Limit: 1,
         Market: 2,
         Stop: 3,
@@ -52,8 +52,8 @@ export function mapOrderType(type: OrderType): number {
  * @param type - TradingView order type number
  * @returns Trade Server OrderType
  */
-export function unmapOrderType(type: number): OrderType {
-    const typeMap: Record<number, OrderType> = {
+export function unmapOrderType(type: number): TradeServerOrderType {
+    const typeMap: Record<number, TradeServerOrderType> = {
         1: 'Limit',
         2: 'Market',
         3: 'Stop',
@@ -120,11 +120,11 @@ export function unmapTimeInForce(duration?: { type: string }): TimeInForce {
     return tifMap[duration.type] || 'GTC';
 }
 
-function isPositionBracketOrderType(type: OrderType): boolean {
+function isPositionBracketOrderType(type: TradeServerOrderType): boolean {
     return type === 'Stop' || type === 'StopLimit' || type === 'Limit';
 }
 
-function isStopBracketOrderType(type: OrderType): boolean {
+function isStopBracketOrderType(type: TradeServerOrderType): boolean {
     return type === 'Stop' || type === 'StopLimit';
 }
 
@@ -217,6 +217,26 @@ export function enrichPositionBracketOrders(
 }
 
 /**
+ * TradingView's order edit header formats the "@ price" segment as
+ * `price || avgPrice || limitPrice` and does not fall back to `stopPrice`.
+ * Mirror the stop trigger into `avgPrice` for unfilled stop orders.
+ */
+function resolveTradingViewAvgPrice(
+    order: TradeServerOrder,
+    orderType: TradingViewOrderType
+): number | undefined {
+    if (order.ap !== undefined) {
+        return order.ap;
+    }
+
+    if (orderType === TradingViewOrderType.Stop && order.sp !== undefined) {
+        return order.sp;
+    }
+
+    return undefined;
+}
+
+/**
  * Transform Trade Server orders to TradingView format
  * @param orders - Array of Trade Server orders
  * @returns Array of TradingView Order objects
@@ -230,17 +250,20 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
                   ? { parentId: order.poi.toString(), parentType: ParentType.Order as number }
                   : {};
 
+        const orderType = mapOrderType(order.t) as TradingViewOrderType;
+        const avgPrice = resolveTradingViewAvgPrice(order, orderType);
+
         return {
             id: order.id.toString(),
             symbol: order.s,
             brokerSymbol: order.s,
-            type: mapOrderType(order.t),
+            type: orderType,
             side: order.S === 'buy' ? Side.Buy : Side.Sell,
             qty: order.q,
             status: mapOrderStatus(order.st),
             limitPrice: order.lp,
             stopPrice: order.sp,
-            avg: order.ap || 0,
+            ...(avgPrice !== undefined && { avgPrice }),
             filledQty: order.fq || 0,
             ...parent,
             duration: mapTimeInForce(order.tif, order.tt),
