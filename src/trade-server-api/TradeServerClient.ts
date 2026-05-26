@@ -442,7 +442,7 @@ export class TradeServerClient {
      */
     async unsubscribeFromCandles(symbol: string, interval: CandleInterval): Promise<unknown> {
         const params: CandlesSubscriptionParams = { s: symbol, i: interval };
-        return this.websocket.unsubscribeFromChannel('ohlc', params as unknown as Record<string, unknown>);
+        return this.websocket.unsubscribeFromChannel('ohlc', params as unknown as Record<string, unknown>, false);
     }
 
     /**
