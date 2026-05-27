@@ -266,6 +266,8 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
             ...(avgPrice !== undefined && { avgPrice }),
             filledQty: order.fq || 0,
             ...parent,
+            parentOrderId: order.poi?.toString() ?? '',
+            parentPositionId: order.ppi?.toString() ?? '',
             duration: mapTimeInForce(order.tif, order.tt),
             time: formatTimestamp(order.C),
         };
@@ -287,6 +289,7 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
         avgPrice: position.p,
         pl: position.pl,
         swap: position.sw,
+        commission: position.c,
         ...(position.sl !== undefined && { stopLoss: position.sl }),
         ...(position.tp !== undefined && { takeProfit: position.tp }),
         time: formatTimestamp(position.C),
@@ -308,6 +311,7 @@ export function transformTradeHistory(trades: TradeServerTrade[]) {
         avgPrice: trade.p,
         pl: trade.pl,
         swap: trade.sw,
+        commission: trade.c,
         time: formatTimestamp(trade.t),
         orderId: trade.oi.toString(),
     }));
