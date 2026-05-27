@@ -351,19 +351,29 @@ export class WebSocketClient {
     }
 
     /**
-     * Unsubscribe from a WebSocket channel
+     * Unsubscribe from a WebSocket channel.
+     * Set awaitAck=false for fire-and-forget (e.g. during rapid interval changes)
+     * where local cleanup is sufficient and timeout errors are expected.
      */
-    async unsubscribeFromChannel(channel: WebSocketChannel, params?: Record<string, unknown>): Promise<unknown> {
+    async unsubscribeFromChannel(
+        channel: WebSocketChannel,
+        params?: Record<string, unknown>,
+        awaitAck = true
+    ): Promise<unknown> {
         const reqId = this.generateReqId();
 
-        const promise = new Promise((resolve, reject) => {
-            const timeoutHandle = setTimeout(() => {
-                this.pendingRequests.delete(reqId);
-                reject(new SubscriptionTimeoutError(channel));
-            }, this.options.subscriptionTimeout);
+        let promise: Promise<unknown> = Promise.resolve({ success: true, channel });
 
-            this.pendingRequests.set(reqId, { resolve, reject, timeout: timeoutHandle });
-        });
+        if (awaitAck) {
+            promise = new Promise((resolve, reject) => {
+                const timeoutHandle = setTimeout(() => {
+                    this.pendingRequests.delete(reqId);
+                    reject(new SubscriptionTimeoutError(channel));
+                }, this.options.subscriptionTimeout);
+
+                this.pendingRequests.set(reqId, { resolve, reject, timeout: timeoutHandle });
+            });
+        }
 
         this.send({
             m: 'unsubscribe',

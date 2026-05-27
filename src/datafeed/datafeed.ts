@@ -185,8 +185,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         onHistoryCallback: HistoryCallback,
         onErrorCallback: DatafeedErrorCallback
     ): void {
-        const { from, to } = periodParams;
-        logger.debug('getBars:', symbolInfo.name, resolution, new Date(from * 1000), new Date(to * 1000));
+        const { from, to, countBack } = periodParams;
+        logger.debug('getBars:', symbolInfo.name, resolution, new Date(from * 1000), new Date(to * 1000), 'countBack:', countBack);
 
         const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
         if (!interval) {
@@ -195,13 +195,16 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             return;
         }
 
-        // Use TradeServerClient method which internally uses SDK
+        // Per TradingView docs, countBack has higher priority than from.
+        // Request countBack bars ending at 'to' using descending sort, then reverse for TV.
         this.api.marketData
             .getHistoricalBars(
                 symbolInfo.name,
                 interval,
-                from * 1000000, // Convert seconds to microseconds
-                to * 1000000 // Convert seconds to microseconds
+                0, // Don't constrain 'from' - countBack takes priority
+                to * 1000000, // Convert seconds to microseconds
+                countBack,
+                'desc'
             )
             .then((response) => {
                 logger.debug('getBars response:', {
@@ -224,6 +227,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                         close: candle.c,
                         volume: candle.v || 0,
                     }));
+                    // Results are in descending order, reverse to ascending for TradingView
+                    bars.reverse();
                     logger.debug('Returning bars:', bars.length, 'first:', bars[0], 'last:', bars[bars.length - 1]);
                     onHistoryCallback(bars, { noData: false });
                 } else {
@@ -357,7 +362,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 logger.info(`Unsubscribed from candles: ${symbolInfo.name} ${interval}`);
             })
             .catch((error: unknown) => {
-                logger.error(`Failed to unsubscribe from candles:`, error);
+                logger.debug(`Wire unsubscribe from candles failed (non-critical):`, error);
             });
     }
 
