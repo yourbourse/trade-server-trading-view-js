@@ -137,13 +137,14 @@ export class PositionService {
             }
 
             const closeQty = amount || position.qty;
+            const tif = await this.resolveCloseTif(position.symbol);
 
             const closeOrder: PlaceOrder = {
                 s: position.symbol,
                 q: closeQty,
                 S: position.side === Side.Buy ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'IOC',
+                tif,
                 pi: parseInt(positionId),
             };
 
@@ -151,6 +152,21 @@ export class PositionService {
         } catch (error) {
             handleApiError(error, 'Error closing position');
         }
+    }
+
+    private async resolveCloseTif(symbol: string): Promise<'IOC' | 'FOK'> {
+        try {
+            const symbolConfig = await this.api.marketData.getSymbolInfo(symbol);
+            if (symbolConfig.ioc) {
+                return 'IOC';
+            }
+            if (symbolConfig.fok) {
+                return 'FOK';
+            }
+        } catch (error) {
+            logger.warn('Failed to resolve TIF for close, defaulting to IOC', error);
+        }
+        return 'IOC';
     }
 
     markBracketEdit(positionId: string, stopLoss?: number, takeProfit?: number): void {
@@ -195,12 +211,14 @@ export class PositionService {
                 throw new Error('Position not found');
             }
 
+            const tif = await this.resolveCloseTif(position.s);
+
             const reverseOrder: PlaceOrder = {
                 s: position.s,
                 q: position.q * 2,
                 S: position.S === 'buy' ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'IOC',
+                tif,
                 pi: position.id,
             };
 
