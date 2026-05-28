@@ -127,7 +127,11 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         // tv = monetary value of 1 tick move per lot. Divide by lotSize to get per-unit value.
         const lotSize = symbolConfig.l;
-        const pipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : 1;
+        // Fallback follows TradingView's formula: pipSize * pointValue * accountCurrencyRate
+        // with pointValue=1, accountCurrencyRate=1 → pipValue = pipSize = mintick.
+        // Using 1 as fallback causes TradingView to display astronomical P&L on brackets
+        // because it multiplies pipValue × qty × lotSize internally.
+        const pipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
 
         const allowedOrderTypes: OrderType[] = [];
         if (symbolConfig.M) {
@@ -176,7 +180,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             currency: symbolConfig.p,
             baseCurrency: symbolConfig.b,
             quoteCurrency: symbolConfig.p,
-            bigPointValue: symbolConfig.tv && symbolConfig.tz ? symbolConfig.tv / symbolConfig.tz / lotSize : undefined,
+            bigPointValue: symbolConfig.tv ? symbolConfig.tv / mintick / lotSize : undefined,
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
             ...(allowedDurations.length > 0 && { allowedDurations }),
         };
