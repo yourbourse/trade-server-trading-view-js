@@ -314,5 +314,6 @@ export function transformTradeHistory(trades: TradeServerTrade[]) {
         commission: trade.c,
         time: formatTimestamp(trade.t),
         orderId: trade.oi.toString(),
+        positionId: trade.pi.toString(),
     }));
 }
