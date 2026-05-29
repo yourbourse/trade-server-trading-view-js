@@ -241,6 +241,13 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
         dataFields: ['tradeId'],
         formatter: 'integerSeparated' as StandardFormatterName,
     },
+    {
+        label: 'Position ID',
+        alignment: 'right',
+        id: 'positionId',
+        dataFields: ['positionId'],
+        formatter: 'text' as StandardFormatterName,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
 
