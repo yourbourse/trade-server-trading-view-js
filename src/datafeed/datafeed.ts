@@ -6,6 +6,7 @@
 import CONFIG from '../config.js';
 import type { Symbol, SymbolCollection, Candle } from '../schema/public-api/types.gen';
 import type {
+    Bar,
     DatafeedConfiguration,
     LibrarySymbolInfo,
     IDatafeedChartApi,
@@ -34,6 +35,14 @@ interface QuoteSubscription {
     wsCallback: (data: any) => void;
 }
 
+interface RawQuoteState {
+    s: string;
+    bp?: number;
+    ap?: number;
+    bc?: number;
+    t?: number;
+}
+
 class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     api: TradeServerClient;
     subscribers: Record<string, SubscriberInfo>;
@@ -42,7 +51,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     private quoteSubscriptions: Map<string, QuoteSubscription>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private quotesCache: Map<string, any>;
-    // Per-symbol L1 listener tracking. Wire subscribe fires only on 0→1,
+    private latestRawQuotes: Map<string, RawQuoteState>;
+    // Per-symbol L1 listener tracking for all quote consumers. Wire subscribe fires only on 0→1,
     // wire unsubscribe only on 1→0. This is the dedupe that prevents the
     // server's "Already exists" rejection when multiple widgets watch the
     // same symbol.
@@ -55,6 +65,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.subscribers = {};
         this.quoteSubscriptions = new Map();
         this.quotesCache = new Map();
+        this.latestRawQuotes = new Map();
         this.l1Listeners = new Map();
         this.reconnectRegistered = false;
         logger.debug('✅ Datafeed implements:', {
@@ -242,6 +253,88 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             });
     }
 
+    private getBarL1ListenerId(subscriberUID: string): string {
+        return `bars:${subscriberUID}`;
+    }
+
+    private buildQuoteOkData(quote: RawQuoteState): QuoteOkData {
+        const symbol = quote.s;
+        const bid = typeof quote.bp === 'number' ? quote.bp : undefined;
+        const ask = typeof quote.ap === 'number' ? quote.ap : undefined;
+        const previousBidClose = typeof quote.bc === 'number' ? quote.bc : undefined;
+        // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
+        const hasBidAndClose = bid !== undefined && previousBidClose !== undefined && previousBidClose !== 0;
+        const ch = hasBidAndClose ? bid - previousBidClose : undefined;
+        const chp = hasBidAndClose ? ((bid - previousBidClose) / previousBidClose) * 100 : undefined;
+        const spread = bid !== undefined && ask !== undefined ? ask - bid : 0;
+
+        return {
+            s: 'ok',
+            n: symbol,
+            v: {
+                ch,
+                chp,
+                short_name: symbol,
+                exchange: 'YourBourse',
+                description: symbol,
+                lp: bid || ask || 0,
+                ask,
+                bid,
+                spread,
+                volume: 0,
+            },
+        };
+    }
+
+    private getFixedIntervalDurationMs(interval: CandleInterval): number | undefined {
+        const minute = 60 * 1000;
+        const hour = 60 * minute;
+        const day = 24 * hour;
+
+        switch (interval) {
+            case '1M':
+                return minute;
+            case '5M':
+                return 5 * minute;
+            case '15M':
+                return 15 * minute;
+            case '30M':
+                return 30 * minute;
+            case '1H':
+                return hour;
+            case '4H':
+                return 4 * hour;
+            case 'D':
+                return day;
+            case 'W':
+                return 7 * day;
+            case 'M':
+                return undefined;
+        }
+    }
+
+    private isQuoteInsideLatestBarInterval(subscriber: SubscriberInfo, quoteTimeMs: number): boolean {
+        const latestOfficialBar = subscriber.latestOfficialBar;
+        if (!latestOfficialBar || quoteTimeMs < latestOfficialBar.time) {
+            return false;
+        }
+
+        if (subscriber.interval === 'M') {
+            const quoteDate = new Date(quoteTimeMs);
+            const barDate = new Date(latestOfficialBar.time);
+            return (
+                quoteDate.getUTCFullYear() === barDate.getUTCFullYear() &&
+                quoteDate.getUTCMonth() === barDate.getUTCMonth()
+            );
+        }
+
+        if (!subscriber.barDurationMs) {
+            return false;
+        }
+
+        return quoteTimeMs < latestOfficialBar.time + subscriber.barDurationMs;
+    }
+
     /**
      * TradingView calls this to subscribe to real-time updates
      */
@@ -260,10 +353,105 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             return;
         }
 
+        const candleCallback = (data: unknown) => {
+            const subscriber = this.subscribers[subscriberUID];
+            if (!subscriber) {
+                return; // Subscriber was removed
+            }
+
+            const candle = (data as { candle?: Candle & { i?: CandleInterval } })?.candle;
+            if (!candle) {
+                return;
+            }
+
+            // Filter by interval - only process candles matching our subscribed interval
+            // This prevents mixing data from different intervals during interval changes
+            if (candle.i !== subscriber.interval) {
+                return;
+            }
+
+            const bar: Bar = {
+                time: Math.floor(candle.t / 1000), // Convert microseconds to milliseconds
+                open: candle.o,
+                high: candle.h,
+                low: candle.l,
+                close: candle.c,
+                volume: candle.v,
+            };
+
+            subscriber.latestOfficialBar = bar;
+            subscriber.latestQuoteTimestampMs = undefined;
+            subscriber.callback(bar);
+        };
+
+        let suspiciousTimestampLogged = false;
+        const quoteCallback = (data: unknown) => {
+            const subscriber = this.subscribers[subscriberUID];
+            if (!subscriber) {
+                return;
+            }
+
+            const quote = (data as { quote?: RawQuoteState })?.quote;
+            if (!quote) {
+                return;
+            }
+
+            // Keep raw quote cache fresh for getQuotes even if this update
+            // cannot be used for synthetic bar emission.
+            this.latestRawQuotes.set(quote.s, quote);
+
+            if (typeof quote.bp !== 'number' || !Number.isFinite(quote.bp)) {
+                return;
+            }
+
+            if (typeof quote.t !== 'number' || !Number.isFinite(quote.t)) {
+                return;
+            }
+
+            const latestOfficialBar = subscriber.latestOfficialBar;
+            if (!latestOfficialBar) {
+                return;
+            }
+
+            // quote.t uses microseconds since Unix epoch, same unit as candle.t.
+            const quoteTimeMs = Math.floor(quote.t / 1000);
+            if (quoteTimeMs < 1_000_000_000_000) {
+                if (!suspiciousTimestampLogged) {
+                    logger.warn(
+                        `quoteCallback: suspicious quoteTimeMs=${quoteTimeMs} for ${subscriber.symbolInfo.name}; expected milliseconds after microsecond conversion`
+                    );
+                    suspiciousTimestampLogged = true;
+                }
+                return;
+            }
+            if (
+                typeof subscriber.latestQuoteTimestampMs === 'number' &&
+                quoteTimeMs <= subscriber.latestQuoteTimestampMs
+            ) {
+                return;
+            }
+
+            if (!this.isQuoteInsideLatestBarInterval(subscriber, quoteTimeMs)) {
+                return;
+            }
+
+            const syntheticBar: Bar = {
+                ...latestOfficialBar,
+                close: quote.bp,
+            };
+
+            subscriber.latestQuoteTimestampMs = quoteTimeMs;
+            subscriber.callback(syntheticBar);
+        };
+
         this.subscribers[subscriberUID] = {
             symbolInfo,
             resolution,
+            interval,
+            barDurationMs: this.getFixedIntervalDurationMs(interval),
             callback: onRealtimeCallback,
+            candleCallback,
+            quoteCallback,
         };
 
         // Subscribe to candle updates from the Trade Server API
@@ -276,45 +464,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 logger.error(`Failed to subscribe to candles: ${symbolInfo.name} ${interval}`, error);
             });
 
-        // Handle real-time candle updates via subscription manager
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const candleCallback = (data: any) => {
-            const subscriber = this.subscribers[subscriberUID];
-            if (!subscriber) {
-                return; // Subscriber was removed
-            }
-
-            const { candle } = data;
-
-            // Filter by interval - only process candles matching our subscribed interval
-            // This prevents mixing data from different intervals during interval changes
-            if (candle.i !== interval) {
-                return;
-            }
-
-            // Convert to TradingView bar format
-            const barTime = Math.floor(candle.t / 1000); // Convert microseconds to milliseconds
-
-            const bar = {
-                time: barTime,
-                open: candle.o,
-                high: candle.h,
-                low: candle.l,
-                close: candle.c,
-                volume: candle.v,
-            };
-
-            onRealtimeCallback(bar);
-        };
-
         // Subscribe to symbol-specific candle updates
         this.api.subscriptions.subscribe(`candles_${symbolInfo.name}`, candleCallback);
+        this.api.subscriptions.subscribe(`quote_${symbolInfo.name}`, quoteCallback);
 
-        // Store callback reference for cleanup
-        const subscriber = this.subscribers[subscriberUID];
-        if (subscriber) {
-            subscriber.candleCallback = candleCallback;
-        }
+        this.acquireL1(symbolInfo.name, this.getBarL1ListenerId(subscriberUID));
     }
 
     /**
@@ -328,14 +482,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             return;
         }
 
-        const { symbolInfo, resolution, candleCallback } = subscriber;
+        const { symbolInfo, interval, candleCallback, quoteCallback } = subscriber;
         delete this.subscribers[subscriberUID];
-
-        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
-        if (!interval) {
-            delete this.subscribers[subscriberUID];
-            return;
-        }
 
         // Unhook the local pub/sub callback unconditionally. During a transient
         // disconnect (auto-reconnect mid-flight) wsClient still exists and the
@@ -350,6 +498,16 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 logger.debug('unsubscribeBars: local subscription already torn down or unavailable', error);
             }
         }
+
+        if (quoteCallback) {
+            try {
+                this.api.subscriptions.unsubscribe(`quote_${symbolInfo.name}`, quoteCallback);
+            } catch (error: unknown) {
+                logger.debug('unsubscribeBars: local quote subscription already torn down or unavailable', error);
+            }
+        }
+
+        this.releaseL1(symbolInfo.name, this.getBarL1ListenerId(subscriberUID));
 
         if (!this.api.isConnected()) {
             logger.debug('unsubscribeBars: WS not connected, skipping wire unsubscribe');
@@ -385,6 +543,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     return this.quotesCache.get(symbol);
                 }
 
+                const latestRawQuote = this.latestRawQuotes.get(symbol);
+                if (latestRawQuote) {
+                    return this.buildQuoteOkData(latestRawQuote);
+                }
+
                 // Fetch from API
                 const quote = await this.api.marketData.getTicker(symbol);
 
@@ -392,23 +555,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     throw new Error(`No quote data available for ${symbol}`);
                 }
 
-                const quoteData: QuoteOkData = {
-                    s: 'ok',
-                    n: symbol,
-                    v: {
-                        // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
-                        ch: quote.bc ? quote.bp - quote.bc : undefined,
-                        chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
-                        short_name: symbol,
-                        exchange: 'YourBourse',
-                        description: symbol,
-                        lp: quote.bp || quote.ap || 0,
-                        ask: quote.ap,
-                        bid: quote.bp,
-                        spread: quote.ap && quote.bp ? quote.ap - quote.bp : 0,
-                        volume: 0,
-                    },
-                };
+                const quoteData = this.buildQuoteOkData(quote);
 
                 this.quotesCache.set(symbol, quoteData);
                 return quoteData;
@@ -453,23 +600,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 return;
             }
 
-            const quoteData: QuoteOkData = {
-                s: 'ok',
-                n: quote.s,
-                v: {
-                    // TODO: fix the formula after https://yourbourse.atlassian.net/browse/TS-1773
-                    ch: quote.bc ? quote.bp - quote.bc : undefined,
-                    chp: quote.bc ? ((quote.bp - quote.bc) / quote.bc) * 100 : undefined,
-                    short_name: quote.s,
-                    exchange: 'YourBourse',
-                    description: quote.s,
-                    lp: quote.bp || quote.ap || 0,
-                    ask: quote.ap,
-                    bid: quote.bp,
-                    spread: quote.ap && quote.bp ? quote.ap - quote.bp : 0,
-                    volume: 0,
-                },
-            };
+            this.latestRawQuotes.set(quote.s, quote);
+
+            const quoteData = this.buildQuoteOkData(quote);
 
             this.quotesCache.set(quote.s, quoteData);
             onRealtimeCallback([quoteData]);
@@ -567,6 +700,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         set.delete(listenerGUID);
         if (set.size > 0) return;
         this.l1Listeners.delete(symbol);
+        this.latestRawQuotes.delete(symbol);
         if (!this.api.isConnected()) return;
         this.api
             .unsubscribeFromQuotes(symbol)
@@ -598,20 +732,23 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
 
         // Local view must match the server's now-empty view.
         this.l1Listeners.clear();
+        this.latestRawQuotes.clear();
 
         // Replay L1 per-listener; acquireL1 re-derives the wire-call set.
         for (const [listenerGUID, sub] of this.quoteSubscriptions) {
             sub.symbols.forEach((symbol) => this.acquireL1(symbol, listenerGUID));
         }
 
-        // Replay candle subscriptions. Bars don't go through the dedupe map
-        // (rare collision in practice) — this is a straight per-listener replay.
-        for (const sub of Object.values(this.subscribers)) {
-            const interval = (CONFIG.websocket.intervalMapping[sub.resolution] || sub.resolution) as CandleInterval;
+        // Replay bar-owned L1 listeners and canonical candle subscriptions.
+        for (const [subscriberUID, sub] of Object.entries(this.subscribers)) {
+            sub.latestOfficialBar = undefined;
+            sub.latestQuoteTimestampMs = undefined;
+            this.acquireL1(sub.symbolInfo.name, this.getBarL1ListenerId(subscriberUID));
+
             this.api
-                .subscribeToCandles(sub.symbolInfo.name, interval, true)
+                .subscribeToCandles(sub.symbolInfo.name, sub.interval, true)
                 .catch((err: unknown) =>
-                    logger.warn(`Candle re-subscribe failed: ${sub.symbolInfo.name} ${interval}`, err)
+                    logger.warn(`Candle re-subscribe failed: ${sub.symbolInfo.name} ${sub.interval}`, err)
                 );
         }
 
