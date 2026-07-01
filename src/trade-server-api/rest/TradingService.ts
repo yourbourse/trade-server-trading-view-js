@@ -48,13 +48,21 @@ export class TradingService {
 
     // ==================== ORDERS ====================
 
+    // Options shared by all write operations: the SDK will throw on HTTP error
+    // (so broker catch blocks see the real status), and the interceptor's generic
+    // 5xx toast is suppressed so the broker can show a mutation-specific message.
+    private static readonly MUTATION_OPTS = {
+        throwOnError: true,
+        __ignoreStatusCodes: [500, 502, 503, 504],
+    };
+
     /**
      * Place a new order
      * POST /order
      */
     async placeOrder(order: PlaceOrder): Promise<Order> {
         this.log.info(`Placing order:`, order);
-        return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order);
+        return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
     }
 
     /**
@@ -63,7 +71,7 @@ export class TradingService {
      */
     async modifyOrder(modifications: ModifyOrder): Promise<unknown> {
         this.log.info(`Modifying order: ${modifications.id}`);
-        return await executeAuthenticatedRequest(this.user, sdkModifyOrder, modifications);
+        return await executeAuthenticatedRequest(this.user, sdkModifyOrder, modifications, undefined, TradingService.MUTATION_OPTS);
     }
 
     /**
@@ -72,7 +80,7 @@ export class TradingService {
      */
     async cancelOrder(orderId: number): Promise<unknown> {
         this.log.info(`Canceling order: ${orderId}`);
-        return await executeAuthenticatedDeleteWithPath(this.user, sdkCancelOrder, { orderId: orderId.toString() });
+        return await executeAuthenticatedDeleteWithPath(this.user, sdkCancelOrder, { orderId: orderId.toString() }, TradingService.MUTATION_OPTS);
     }
 
     /**
@@ -93,7 +101,7 @@ export class TradingService {
             body.tp = takeProfit;
         }
 
-        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyOrderSltp, body);
+        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyOrderSltp, body, undefined, TradingService.MUTATION_OPTS);
     }
 
     /**
@@ -127,7 +135,7 @@ export class TradingService {
             const result: WorkingOrdersCollection = await this.getOrders(filter, nextToken ?? null);
             const orders = result?.orders || [];
             allOrders = allOrders.concat(orders);
-            nextToken = result.nextToken;
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allOrders;
@@ -164,7 +172,7 @@ export class TradingService {
             const result: OrdersHistoryCollection = await this.getOrderHistory(filter, nextToken ?? null);
             const orders = result?.orders || [];
             allOrders = allOrders.concat(orders);
-            nextToken = result.nextToken;
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allOrders;
@@ -231,7 +239,7 @@ export class TradingService {
             );
             const positions = result?.positions || [];
             allPositions = allPositions.concat(positions);
-            nextToken = result.nextToken;
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allPositions;
@@ -255,7 +263,7 @@ export class TradingService {
             body.tp = takeProfit;
         }
 
-        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyPositionSltp, body);
+        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyPositionSltp, body, undefined, TradingService.MUTATION_OPTS);
     }
 
     // ==================== TRADES ====================
@@ -283,7 +291,7 @@ export class TradingService {
             const result: TradeCollection = await this.getTradeHistory(filter, nextToken ?? null);
             const trades = result?.trades || [];
             allTrades = allTrades.concat(trades);
-            nextToken = result.nextToken;
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allTrades;

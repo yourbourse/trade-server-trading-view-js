@@ -79,8 +79,8 @@ export class AccountService {
 
         do {
             const result = await this.getTransfersHistory(filter, nextToken ?? null);
-            allTransfers = allTransfers.concat(result.transfers);
-            nextToken = result.nextToken;
+            allTransfers = allTransfers.concat(result?.transfers ?? []);
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allTransfers;
@@ -109,6 +109,6 @@ export class AccountService {
      */
     async getServerTime(): Promise<string> {
         const result = await this.healthCheck();
-        return result.now;
+        return result?.now ?? '';
     }
 }
