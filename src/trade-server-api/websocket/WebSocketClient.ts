@@ -8,6 +8,7 @@ import { SubscriptionManager } from './SubscriptionManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import { WebSocketConnectionError, SubscriptionTimeoutError, SubscriptionError } from '../errors/index.js';
 import { logger } from '../../utils/logger.js';
+import { WebSocketCloseCode } from '../constants/WebSocketCloseCodes.js';
 
 export interface WebSocketClientOptions {
     /** WebSocket URL */
@@ -45,6 +46,7 @@ export class WebSocketClient {
     private log = logger.child('WebSocketClient');
     private isConnecting = false;
     private reconnectListeners = new Set<() => void>();
+    private authFailureListeners = new Set<() => void>();
     private manuallyClosed = false;
 
     constructor(options: WebSocketClientOptions) {
@@ -93,6 +95,26 @@ export class WebSocketClient {
     onReconnect(cb: () => void): () => void {
         this.reconnectListeners.add(cb);
         return () => this.reconnectListeners.delete(cb);
+    }
+
+    /**
+     * Register a callback fired when the server closes the WebSocket with a
+     * policy-violation code (1008) — which signals a revoked / banned session.
+     * The callback owner (TradeServerClient) is responsible for signing out.
+     * Returns a disposer that removes the listener.
+     */
+    onAuthFailure(cb: () => void): () => void {
+        this.authFailureListeners.add(cb);
+        return () => this.authFailureListeners.delete(cb);
+    }
+
+    /**
+     * Reset the reconnect counter and attempt a fresh connection.
+     * Used by the UI's "Reconnect" button after exhausted attempts.
+     */
+    reconnect(): void {
+        this.reconnectAttempts = 0;
+        void this.connect();
     }
 
     /**
@@ -159,6 +181,16 @@ export class WebSocketClient {
                     this.stopHeartbeat();
                     this.subscriptions.notify('disconnected', { code: event.code, reason: event.reason });
 
+                    if (event.code === WebSocketCloseCode.PolicyViolation) {
+                        // 1008 = server-side policy violation (revocation, ban, etc.).
+                        // All such closures are session-ending — do not reconnect.
+                        this.log.warn('WebSocket closed with policy violation (1008) — firing auth-failure listeners');
+                        for (const cb of this.authFailureListeners) {
+                            try { cb(); } catch (err) { this.log.error('onAuthFailure listener threw', err); }
+                        }
+                        return;
+                    }
+
                     if (this.options.autoReconnect && !this.manuallyClosed) {
                         this.scheduleReconnect();
                     }
@@ -212,13 +244,15 @@ export class WebSocketClient {
 
         if (this.options.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.options.maxReconnectAttempts) {
             this.log.error(`Max reconnect attempts (${this.options.maxReconnectAttempts}) reached`);
+            this.subscriptions.notify('reconnect_exhausted', {});
             return;
         }
 
         this.reconnectAttempts++;
-        const delay = this.options.reconnectDelay * Math.min(this.reconnectAttempts, 5); // Exponential backoff (capped at 5x)
+        const delay = this.options.reconnectDelay * Math.min(this.reconnectAttempts, 5);
 
         this.log.info(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+        this.subscriptions.notify('reconnecting', { attempt: this.reconnectAttempts, max: this.options.maxReconnectAttempts });
 
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;

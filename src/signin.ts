@@ -201,10 +201,10 @@ class SignInManager {
             const authService = new AuthService(authUser);
             const accountService = new AccountService(authUser);
 
-            // Attempt to authenticate
+            // Attempt to authenticate (throws on HTTP error thanks to throwOnError: true in AuthService)
             const response = await authService.signIn(login);
 
-            // Validate response
+            // Sanity-check the response shape (shouldn't fail if the server is spec-compliant)
             if (!response || (!response.token && !response.signingToken)) {
                 throw new Error('Invalid response from server. Authentication failed.');
             }
@@ -318,6 +318,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     logger.debug('Current pathname:', window.location.pathname);
 
     await displayVersion('app-version');
+
+    // Show a note when the user was signed out due to session expiry / revocation.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reason') === 'session_ended') {
+        const errorEl = document.getElementById('error-message');
+        if (errorEl) {
+            errorEl.textContent = 'You were signed out because your session ended. Please sign in again.';
+            errorEl.style.display = 'block';
+        }
+    }
 
     // If user is already authenticated, redirect to main app
     if (isAuthenticated()) {
