@@ -25,6 +25,7 @@ import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearSto
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
 import { OrderType } from './broker-api/types.js';
+import { initConnectionIndicator } from './ui/connectionIndicator.js';
 
 const logger = createLogger({ prefix: '[App]' });
 
@@ -121,6 +122,7 @@ class TradingApp {
 
             // Connect WebSocket for real-time updates (auto-subscribes to configured channels)
             await this.tradeServerClient.connect();
+            initConnectionIndicator(this.tradeServerClient);
 
             // Initialize Datafeed (now includes both chart and quotes API)
             this.datafeed = new Datafeed(this.tradeServerClient);
