@@ -201,9 +201,6 @@ class TradingApp {
             const response = await this.tradeServerClient.auth.signIn(username);
             logger.info('Authentication successful:', response);
 
-            // Persist apiKey, signingToken, and expiration. The expiration
-            // seeds TradeServerClient's refresh scheduler, which is installed
-            // at the end of connect() right after this call.
             persistApiToken(response);
         } catch (error) {
             logger.error('Authentication failed:', error);

@@ -28,7 +28,7 @@ import { deriveServerUrls } from '../utils/serverUrl.js';
 import { logger } from '../utils/logger.js';
 import { persistApiToken, getTokenExpiration, signOut } from '../utils/auth.js';
 
-const TOKEN_REFRESH_SAFETY_MARGIN_MS = 60_000;
+const TOKEN_REFRESH_SAFETY_MARGIN_MS = 15 * 60 * 1000;
 
 /**
  * Main Trade Server API Client
@@ -171,6 +171,10 @@ export class TradeServerClient {
     /**
      * Schedule a single token refresh to fire SAFETY_MARGIN before expiry.
      * Replaces any previously scheduled timer.
+     *
+     * @param expirationMicros - Token expiration as Unix epoch in **microseconds**
+     *   (as returned by `ApiToken.expiration`). Not milliseconds — do not pass
+     *   `Date.now()` here.
      */
     private scheduleTokenRefresh(expirationMicros: number): void {
         const expirationMs = Math.floor(expirationMicros / 1000);
@@ -202,15 +206,10 @@ export class TradeServerClient {
             this.log.info('Refreshing token...');
             const token = await this.auth.refreshToken();
 
-            // If the user disconnected during the in-flight refresh, drop the
-            // result rather than persisting and rescheduling on a dead client.
-            if (!this.wsClient) {
-                this.log.debug('Disconnected during refresh; dropping result');
-                return;
-            }
-
             persistApiToken(token);
-            this.rotateWebSocketAuth();
+            if (this.wsClient) {
+                this.rotateWebSocketAuth();
+            }
             this.scheduleTokenRefresh(token.expiration);
             this.log.info(
                 `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`
