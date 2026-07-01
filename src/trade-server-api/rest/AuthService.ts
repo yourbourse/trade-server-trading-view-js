@@ -26,7 +26,12 @@ export class AuthService {
     async signIn(username: string | number): Promise<ApiToken> {
         this.log.info(`Signing in user: ${username}`);
         const body = { login: username };
-        const response: ApiToken = await executeAuthenticatedRequest(this.user, postAuthorize, body);
+        const response: ApiToken = await executeAuthenticatedRequest(this.user, postAuthorize, body, undefined, {
+            // Opt out of the 401/502 refresh probe — sign-in owns its own error display.
+            // throwOnError lets signin.ts's catch see err.status for better messages.
+            __ignoreStatusCodes: [401, 403],
+            throwOnError: true,
+        });
 
         // Store token if returned
         if (response?.token) {
@@ -50,7 +55,12 @@ export class AuthService {
      */
     async refreshToken(): Promise<ApiToken> {
         this.log.info('Refreshing API token');
-        const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, {});
+        const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, {}, undefined, {
+            // Opt out of the 401/502 refresh probe to prevent recursion.
+            // throwOnError makes doRefresh's catch see the real rejection.
+            __ignoreStatusCodes: [401, 502],
+            throwOnError: true,
+        });
 
         if (response?.token) {
             this.user.apiKey = response.token;

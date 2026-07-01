@@ -12,10 +12,13 @@ export enum NotificationType {
 
 type ShowNotificationFn = (title: string, text: string, notificationType?: NotificationType) => void;
 
+const DEDUP_WINDOW_MS = 5000;
+
 class NotificationService {
     private showNotificationFn: ShowNotificationFn | null = null;
     private log = logger.child('NotificationService');
     private pendingNotifications: Array<{ title: string; text: string; type: NotificationType }> = [];
+    private recentKeys = new Map<string, number>();
 
     /**
      * Initialize notification service with TradingView host's showNotification method
@@ -35,11 +38,20 @@ class NotificationService {
     }
 
     /**
-     * Show a notification
+     * Show a notification. Identical title+text+type within DEDUP_WINDOW_MS are suppressed.
      */
     showNotification(title: string, text: string, type: NotificationType = NotificationType.Error): void {
+        const key = `${type}|${title}|${text}`;
+        const now = Date.now();
+        const last = this.recentKeys.get(key);
+        if (last !== undefined && now - last < DEDUP_WINDOW_MS) {
+            this.log.debug(`Suppressing duplicate notification: ${title}`);
+            return;
+        }
+        this.recentKeys.set(key, now);
+
         if (!this.showNotificationFn) {
-            // Queue notification if service not initialized yet
+            // Queue notification if service not initialized yet — dedup applies on flush too
             this.log.warn('Notification service not initialized, queuing notification');
             this.pendingNotifications.push({ title, text, type });
             return;

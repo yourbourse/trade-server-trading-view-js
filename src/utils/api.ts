@@ -133,14 +133,16 @@ function getHMACDigest(secret: string, body: string): string {
 const toBase64Url = (str: string) => str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
 /**
- * Execute authenticated POST/PUT request with body
+ * Execute authenticated POST/PUT request with body.
+ * @param requestOptions - Extra options forwarded verbatim to the SDK call (e.g. throwOnError, __ignoreStatusCodes).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeAuthenticatedRequest<T = any>(
     user: AuthUser,
     sdkFunction: Function,
     body: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    requestOptions?: Record<string, unknown>
 ): Promise<T> {
     const authHeaders = extraHeaders
         ? { ...getPOSTHeaders(user, body, 'timestamp'), ...extraHeaders }
@@ -149,43 +151,50 @@ async function executeAuthenticatedRequest<T = any>(
         client: publicClient,
         headers: authHeaders,
         body,
+        ...requestOptions,
     });
-    return response.data;
+    return response?.data;
 }
 
 /**
- * Execute authenticated GET request
+ * Execute authenticated GET request.
+ * @param requestOptions - Extra options forwarded verbatim to the SDK call.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeAuthenticatedGet<T = any>(
     user: AuthUser,
     sdkFunction: Function,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    requestOptions?: Record<string, unknown>
 ): Promise<T> {
     const headers = extraHeaders ? { ...getGETHeaders(user), ...extraHeaders } : getGETHeaders(user);
     const response = await sdkFunction({
         client: publicClient,
         headers,
+        ...requestOptions,
     });
-    return response.data;
+    return response?.data;
 }
 
 /**
- * Execute authenticated request with path parameters (for DELETE requests)
+ * Execute authenticated request with path parameters (for DELETE requests).
+ * @param requestOptions - Extra options forwarded verbatim to the SDK call.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function executeAuthenticatedDeleteWithPath<T = any>(
     user: AuthUser,
     sdkFunction: Function,
-    path: Record<string, string>
+    path: Record<string, string>,
+    requestOptions?: Record<string, unknown>
 ): Promise<T> {
     const authHeaders = getDELETEHeaders(user);
     const response = await sdkFunction({
         client: publicClient,
         headers: authHeaders,
         path,
+        ...requestOptions,
     });
-    return response.data;
+    return response?.data;
 }
 
 export {
