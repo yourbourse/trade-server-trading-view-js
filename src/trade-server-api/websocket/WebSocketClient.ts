@@ -48,6 +48,12 @@ export class WebSocketClient {
     private reconnectListeners = new Set<() => void>();
     private authFailureListeners = new Set<() => void>();
     private manuallyClosed = false;
+    // True once the socket has completed at least one successful open. Distinct
+    // from reconstructing "was this a reconnect" via reconnectAttempts, which
+    // reconnect() intentionally zeroes before calling connect() — reusing that
+    // counter here would make onopen wrongly treat a manual post-exhaustion
+    // reconnect as a fresh (non-reconnect) connection and skip re-subscription.
+    private hasConnectedOnce = false;
 
     constructor(options: WebSocketClientOptions) {
         this.options = {
@@ -111,6 +117,9 @@ export class WebSocketClient {
     /**
      * Reset the reconnect counter and attempt a fresh connection.
      * Used by the UI's "Reconnect" button after exhausted attempts.
+     * Resetting reconnectAttempts here is safe for onopen's "was this a
+     * reconnect" check — that check reads hasConnectedOnce, not
+     * reconnectAttempts, so re-subscription still fires correctly afterward.
      */
     reconnect(): void {
         this.reconnectAttempts = 0;
@@ -140,14 +149,20 @@ export class WebSocketClient {
                 this.ws = new WebSocket(this.options.url);
 
                 this.ws.onopen = () => {
-                    // Snapshot before resetting reconnectAttempts — otherwise the
-                    // first reconnect fires with attempts === 0 and skips listeners.
-                    const wasReconnect = this.reconnectAttempts > 0;
+                    // hasConnectedOnce (not reconnectAttempts) is the source of truth for
+                    // "is this a reconnect" — reconnect() resets reconnectAttempts to 0
+                    // before calling connect(), so that counter alone would misclassify
+                    // a manual post-exhaustion reconnect as an initial connection.
+                    const wasReconnect = this.hasConnectedOnce;
+                    this.hasConnectedOnce = true;
                     this.log.info('WebSocket connected');
                     this.isConnecting = false;
                     this.reconnectAttempts = 0;
                     this.startHeartbeat();
-                    this.subscriptions.notify('connected', {});
+                    // reconnect: true tells TradeServerClient this 'connected' is just the
+                    // raw transport opening again, not yet a confirmation that channel
+                    // subscriptions are healthy — see TradeServerClient.onConnectionStateChange.
+                    this.subscriptions.notify('connected', { reconnect: wasReconnect });
                     if (wasReconnect) {
                         for (const cb of this.reconnectListeners) {
                             try {

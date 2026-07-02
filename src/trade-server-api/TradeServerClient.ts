@@ -155,8 +155,19 @@ export class TradeServerClient {
         // Re-check subscriptions on every auto-reconnect so that a disabled
         // account (WS closes 1000, client reconnects) surfaces as 'degraded'
         // rather than staying 'connected' after the socket comes back up.
+        // Only notify 'subscriptions_confirmed' (which flips the indicator to
+        // 'connected') once autoSubscribe() has actually settled and nothing
+        // failed — if something failed, notifySubscriptionDegraded() already
+        // fired 'subscription_degraded', which drives 'degraded'.
         if (this.config.websocket.autoSubscribe) {
-            this.wsClient.onReconnect(() => { void this.autoSubscribe(); });
+            this.wsClient.onReconnect(() => {
+                void this.autoSubscribe().then(() => {
+                    if (!this.wsClient) return; // torn down mid-flight
+                    if (!this.degraded) {
+                        this.wsClient.getSubscriptions().notify('subscriptions_confirmed', {});
+                    }
+                });
+            });
         }
 
         await this.wsClient.connect();
@@ -333,11 +344,22 @@ export class TradeServerClient {
             throw new Error('WebSocket not connected. Call connect() first.');
         }
         const subs = this.wsClient.getSubscriptions();
-        const onConnected = () => cb('connected');
+        // Raw transport 'connected' events fire on every socket open, including
+        // reconnects. On a reconnect, don't forward it yet — the socket being
+        // open doesn't mean channel subscriptions succeeded (e.g. a disabled
+        // account reconnects fine but every subscribe is refused). Wait for
+        // 'subscriptions_confirmed', which TradeServerClient emits once
+        // autoSubscribe() actually succeeds after a reconnect (see connect()).
+        const onConnected = (data: unknown) => {
+            const { reconnect } = (data ?? {}) as { reconnect?: boolean };
+            if (!reconnect) cb('connected');
+        };
+        const onSubscriptionsConfirmed = () => cb('connected');
         const onReconnecting = () => cb('reconnecting');
         const onExhausted = () => cb('disconnected');
         const onDegraded = () => cb('degraded');
         subs.subscribe('connected', onConnected);
+        subs.subscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
         subs.subscribe('reconnecting', onReconnecting);
         subs.subscribe('reconnect_exhausted', onExhausted);
         subs.subscribe('subscription_degraded', onDegraded);
@@ -348,6 +370,7 @@ export class TradeServerClient {
 
         return () => {
             subs.unsubscribe('connected', onConnected);
+            subs.unsubscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
             subs.unsubscribe('reconnecting', onReconnecting);
             subs.unsubscribe('reconnect_exhausted', onExhausted);
             subs.unsubscribe('subscription_degraded', onDegraded);
