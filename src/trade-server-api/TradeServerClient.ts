@@ -69,6 +69,11 @@ export class TradeServerClient {
     private refreshInFlight: Promise<boolean> | null = null;
     private visibilityListener: (() => void) | null = null;
 
+    // Latched so a subscriber registered after the initial autoSubscribe()
+    // (e.g. the connection indicator, wired up post-connect()) still learns
+    // about a degraded state that was already emitted before it subscribed.
+    private degraded = false;
+
     // Logging
     private log = logger.child('TradeServerClient');
 
@@ -342,6 +347,11 @@ export class TradeServerClient {
         subs.subscribe('reconnecting', onReconnecting);
         subs.subscribe('reconnect_exhausted', onExhausted);
         subs.subscribe('subscription_degraded', onDegraded);
+
+        // Replay: autoSubscribe() runs (and may already have failed a channel)
+        // before connect() resolves, i.e. before any caller can have subscribed.
+        if (this.degraded) cb('degraded');
+
         return () => {
             subs.unsubscribe('connected', onConnected);
             subs.unsubscribe('reconnecting', onReconnecting);
@@ -367,6 +377,7 @@ export class TradeServerClient {
      * show "Server is live, but there's no data" when channels are refused.
      */
     private notifySubscriptionDegraded(channel: string): void {
+        this.degraded = true;
         this.wsClient?.getSubscriptions().notify('subscription_degraded', { channel });
     }
 
@@ -378,6 +389,7 @@ export class TradeServerClient {
             return;
         }
 
+        this.degraded = false;
         const { autoSubscribe } = this.config.websocket;
         const subscriptions: Promise<unknown>[] = [];
 
