@@ -252,10 +252,18 @@ export class TradeServerClient {
             if (!token) {
                 throw new Error('Empty response from /refresh');
             }
-            persistApiToken(token);
-            if (this.wsClient) {
-                this.rotateWebSocketAuth();
+
+            // If disconnect() ran while refreshToken() was in flight (e.g. app
+            // teardown), wsClient is already null — drop the result rather than
+            // persisting a token and rescheduling a refresh timer that would
+            // resurrect background network activity after cleanup.
+            if (!this.wsClient) {
+                this.log.debug('Disconnected during refresh; dropping result');
+                return false;
             }
+
+            persistApiToken(token);
+            this.rotateWebSocketAuth();
             this.scheduleTokenRefresh(token.expiration);
             this.log.info(
                 `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`

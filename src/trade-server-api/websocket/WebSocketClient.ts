@@ -122,6 +122,7 @@ export class WebSocketClient {
      * reconnectAttempts, so re-subscription still fires correctly afterward.
      */
     reconnect(): void {
+        this.cancelReconnect();
         this.reconnectAttempts = 0;
         void this.connect();
     }
