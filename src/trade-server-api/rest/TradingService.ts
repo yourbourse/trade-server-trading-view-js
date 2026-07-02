@@ -51,9 +51,12 @@ export class TradingService {
     // Options shared by all write operations: the SDK will throw on HTTP error
     // (so broker catch blocks see the real status), and the interceptor's generic
     // 5xx toast is suppressed so the broker can show a mutation-specific message.
+    // 502 is deliberately excluded — the interceptor already shows no toast for it
+    // (401/403/502 are reserved for the refresh probe), and including it here would
+    // also suppress that probe, leaving mutations unable to recover from a stale session.
     private static readonly MUTATION_OPTS = {
         throwOnError: true,
-        __ignoreStatusCodes: [500, 502, 503, 504],
+        __ignoreStatusCodes: [500, 503, 504],
     };
 
     /**
