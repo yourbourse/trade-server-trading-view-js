@@ -2,8 +2,7 @@ import { Position } from '../../../charting_library/charting_library';
 import type { Position as TradeServerPosition, PositionsCollection, PlaceOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { transformPositions } from '../type-mappings';
-import { handleApiError, getErrorStatus, extractErrorMessage } from '@/utils/apiError';
-import { notificationService } from '@/utils/notificationService';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -123,16 +122,11 @@ export class PositionService {
 
             logger.info('Position brackets modified successfully:', positionId);
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error modifying position brackets:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Position modification failed');
+            handleMutationError(error, {
+                logContext: 'Error modifying position brackets',
+                notifyTitle: 'Bracket update may not have gone through',
+                throwFallback: 'Position modification failed',
+            });
         }
     }
 
@@ -160,16 +154,11 @@ export class PositionService {
 
             await this.api.trading.placeOrder(closeOrder);
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error closing position:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Position close failed');
+            handleMutationError(error, {
+                logContext: 'Error closing position',
+                notifyTitle: 'Position may not have been closed',
+                throwFallback: 'Position close failed',
+            });
         }
     }
 
@@ -243,16 +232,11 @@ export class PositionService {
 
             await this.api.trading.placeOrder(reverseOrder);
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error reversing position:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Position reverse failed');
+            handleMutationError(error, {
+                logContext: 'Error reversing position',
+                notifyTitle: 'Position may not have been reversed',
+                throwFallback: 'Position reverse failed',
+            });
         }
     }
 }

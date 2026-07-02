@@ -2,8 +2,7 @@ import { Order, PlaceOrderResult, Position, PreOrder } from '../../../charting_l
 import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
-import { handleApiError, getErrorStatus, extractErrorMessage } from '@/utils/apiError';
-import { notificationService } from '@/utils/notificationService';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side, OrderType, OrderStatus, ParentType, isStopBracketOrderType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -335,16 +334,11 @@ export class OrderService {
                 orderId: result.id.toString(),
             };
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error placing order:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Order placement failed');
+            handleMutationError(error, {
+                logContext: 'Error placing order',
+                notifyTitle: 'Order may not have been placed',
+                throwFallback: 'Order placement failed',
+            });
         }
     }
 
@@ -376,16 +370,11 @@ export class OrderService {
 
             logger.info('Order modified successfully:', order.id);
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error modifying order:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Order modification failed');
+            handleMutationError(error, {
+                logContext: 'Error modifying order',
+                notifyTitle: 'Order may not have been modified',
+                throwFallback: 'Order modification failed',
+            });
         }
     }
 
@@ -396,16 +385,11 @@ export class OrderService {
             await this.api.trading.cancelOrder(parseInt(orderId));
             logger.info('Order canceled successfully:', orderId);
         } catch (error) {
-            const status = getErrorStatus(error);
-            if (status !== undefined && status >= 500) {
-                notificationService.error(
-                    'Order may not have gone through',
-                    'Check your orders before retrying'
-                );
-            }
-            const msg = extractErrorMessage(error);
-            logger.error('Error canceling order:', msg, `(${status ?? 'unknown'})`);
-            throw new Error(msg || 'Order cancellation failed');
+            handleMutationError(error, {
+                logContext: 'Error canceling order',
+                notifyTitle: 'Order may not have been canceled',
+                throwFallback: 'Order cancellation failed',
+            });
         }
     }
 
