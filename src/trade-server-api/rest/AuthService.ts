@@ -56,9 +56,9 @@ export class AuthService {
     async refreshToken(): Promise<ApiToken> {
         this.log.info('Refreshing API token');
         const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, {}, undefined, {
-            // Opt out of the 401/502 refresh probe to prevent recursion.
+            // Opt out of the 401/403/502 refresh probe to prevent recursion.
             // throwOnError makes doRefresh's catch see the real rejection.
-            __ignoreStatusCodes: [401, 502],
+            __ignoreStatusCodes: [401, 403, 502],
             throwOnError: true,
         });
 

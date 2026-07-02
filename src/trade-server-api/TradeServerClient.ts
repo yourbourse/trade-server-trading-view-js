@@ -95,7 +95,7 @@ export class TradeServerClient {
         this.marketData = new MarketDataService(this.user);
         this.account = new AccountService(this.user);
 
-        // Register the coalesced refresh as the 401/502 probe handler.
+        // Register the coalesced refresh as the 401/403/502 probe handler.
         // Done here (not in connect()) so a 401 on the very first REST call is caught.
         setRefreshProbeHandler(() => this.refreshNow());
 
@@ -215,7 +215,7 @@ export class TradeServerClient {
 
     /**
      * Coalesced refresh entry point. All callers (scheduled timer, visibility
-     * listener, 401/502 probe) share a single in-flight Promise<boolean>.
+     * listener, 401/403/502 probe) share a single in-flight Promise<boolean>.
      * Returns true if the refresh succeeded, false if it failed (sign-out fired).
      */
     refreshNow(): Promise<boolean> {
@@ -230,37 +230,28 @@ export class TradeServerClient {
     }
 
     /**
-     * Perform a token refresh with bounded retry (3 attempts, 2s backoff).
-     * Signs the user out only after all attempts are exhausted.
+     * Perform a single-attempt token refresh. Any error signs the user out
+     * immediately — callers (the axios probe) surface a "try again" toast
+     * on success rather than the original request being auto-resent.
      */
     private async doRefresh(): Promise<boolean> {
-        const MAX_ATTEMPTS = 3;
-        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            try {
-                this.log.info(`Refreshing token (attempt ${attempt}/${MAX_ATTEMPTS})…`);
-                const token = await this.auth.refreshToken();
-                persistApiToken(token);
-                if (this.wsClient) {
-                    this.rotateWebSocketAuth();
-                }
-                this.scheduleTokenRefresh(token.expiration);
-                this.log.info(
-                    `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`
-                );
-                return true;
-            } catch (err) {
-                if (attempt < MAX_ATTEMPTS) {
-                    const backoffMs = 2000 * attempt;
-                    this.log.warn(`Token refresh attempt ${attempt} failed, retrying in ${backoffMs}ms:`, err);
-                    await new Promise<void>((resolve) => setTimeout(resolve, backoffMs));
-                } else {
-                    this.log.error('Token refresh failed after all attempts, signing out:', err);
-                    signOut('session_ended');
-                    return false;
-                }
+        try {
+            this.log.info('Refreshing token…');
+            const token = await this.auth.refreshToken();
+            persistApiToken(token);
+            if (this.wsClient) {
+                this.rotateWebSocketAuth();
             }
+            this.scheduleTokenRefresh(token.expiration);
+            this.log.info(
+                `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`
+            );
+            return true;
+        } catch (err) {
+            this.log.error('Token refresh failed, signing out:', err);
+            signOut('session_ended');
+            return false;
         }
-        return false;
     }
 
     /**

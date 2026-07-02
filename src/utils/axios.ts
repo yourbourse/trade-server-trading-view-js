@@ -13,7 +13,7 @@ import { client as publicAxiosClient } from '../schema/public-api/client.gen';
 
 const log = logger.child('AxiosInterceptor');
 
-// Called by the interceptor when a 401 or 502 is received (unless opted out).
+// Called by the interceptor when a 401, 403, or 502 is received (unless opted out).
 // TradeServerClient registers () => this.refreshNow() in its constructor.
 // A no-op when no handler is registered (e.g. sign-in page).
 let refreshProbeHandler: (() => Promise<boolean>) | null = null;
@@ -82,26 +82,18 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
 
         switch (status) {
             case 401:
+            case 403:
+            case 502:
                 // No toast — let the refresh probe determine the outcome.
-                // If probe succeeds → transient, no sign-out.
+                // If probe succeeds → transient, notify the user to retry.
                 // If probe fails → doRefresh signs the user out.
                 break;
-
-            case 403: {
-                const wait = retryAfter !== null ? ` Please wait ${retryAfter} seconds.` : ' Please try again shortly.';
-                notificationService.error('Temporarily Blocked', `Your access is temporarily blocked.${wait}`);
-                break;
-            }
 
             case 429: {
                 const wait = retryAfter !== null ? ` Please wait ${retryAfter} seconds.` : ' Please slow down.';
                 notificationService.error('Too Many Requests', `You are sending too many requests.${wait}`);
                 break;
             }
-
-            case 502:
-                notificationService.error('Connection Problem', 'Could not reach the server. Checking session…');
-                break;
 
             case 500:
             case 503:
@@ -131,10 +123,15 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
             }
         }
 
-        // Trigger the refresh probe on 401 or 502 (coalesced — N concurrent callers
-        // share one in-flight refresh). The probe itself signs out if /refresh fails.
-        if ((status === 401 || status === 502) && refreshProbeHandler) {
-            void refreshProbeHandler();
+        // Trigger the refresh probe on 401, 403, or 502 (coalesced — N concurrent
+        // callers share one in-flight refresh, so they collapse to a single
+        // "Reconnected" toast via the notification dedup window). The probe
+        // itself signs out if /refresh fails; the original request is never
+        // auto-resent, so a successful probe just asks the user to retry.
+        if ((status === 401 || status === 403 || status === 502) && refreshProbeHandler) {
+            void refreshProbeHandler().then((ok) => {
+                if (ok) notificationService.success('Reconnected', 'Please try your last action again.');
+            });
         }
     }
 
