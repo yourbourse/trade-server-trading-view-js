@@ -229,7 +229,7 @@ export class TradeServerClient {
      * listener, 401/403/502 probe) share a single in-flight Promise<boolean>.
      * Returns true if the refresh succeeded, false if it failed (sign-out fired).
      */
-    refreshNow(): Promise<boolean> {
+    private refreshNow(): Promise<boolean> {
         if (this.refreshInFlight) {
             this.log.debug('Refresh already in flight; sharing existing promise');
             return this.refreshInFlight;

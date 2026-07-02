@@ -87,6 +87,7 @@ class TradingApp {
     widget: IChartingLibraryWidget | null;
     brokerAPI: BrokerApi | null;
     private autoSaveHandler: (() => void) | null = null;
+    private disposeConnectionIndicator: (() => void) | null = null;
 
     constructor() {
         this.tradeServerClient = null;
@@ -122,7 +123,7 @@ class TradingApp {
 
             // Connect WebSocket for real-time updates (auto-subscribes to configured channels)
             await this.tradeServerClient.connect();
-            initConnectionIndicator(this.tradeServerClient);
+            this.disposeConnectionIndicator = initConnectionIndicator(this.tradeServerClient);
 
             // Initialize Datafeed (now includes both chart and quotes API)
             this.datafeed = new Datafeed(this.tradeServerClient);
@@ -446,6 +447,10 @@ class TradingApp {
      * Cleanup on app destroy
      */
     destroy() {
+        if (this.disposeConnectionIndicator) {
+            this.disposeConnectionIndicator();
+            this.disposeConnectionIndicator = null;
+        }
         if (this.tradeServerClient) {
             this.tradeServerClient.disconnect();
         }
