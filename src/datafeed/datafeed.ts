@@ -653,10 +653,16 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         // subscription already consumed its snapshot), hand this listener a value
         // immediately instead of making it wait for the next organic tick — which
         // acquireL1's dedupe means may not come from a fresh wire snapshot at all.
+        // Check quotesCache first: getQuotes()'s REST fallback populates it without
+        // ever touching latestRawQuotes, so a symbol can be "known" there only.
         const replayData = dedupedSymbols
-            .map((symbol) => this.latestRawQuotes.get(symbol))
-            .filter((raw): raw is RawQuoteState => raw !== undefined)
-            .map((raw) => this.buildQuoteOkData(raw));
+            .map((symbol) => {
+                const cached = this.quotesCache.get(symbol);
+                if (cached) return cached;
+                const raw = this.latestRawQuotes.get(symbol);
+                return raw ? this.buildQuoteOkData(raw) : undefined;
+            })
+            .filter((data): data is QuoteOkData => data !== undefined);
 
         if (replayData.length > 0) {
             onRealtimeCallback(replayData);
