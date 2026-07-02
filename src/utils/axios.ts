@@ -6,9 +6,12 @@ import { extractErrorMessage } from '../utils/apiError';
 
 import type { ProblemDetails } from '../schema/public-api';
 import type { SkipUserMessage } from '../types/SkipUserMessage';
+import { logger } from './logger';
 import { notificationService } from './notificationService';
 
 import { client as publicAxiosClient } from '../schema/public-api/client.gen';
+
+const log = logger.child('AxiosInterceptor');
 
 // Called by the interceptor when a 401 or 502 is received (unless opted out).
 // TradeServerClient registers () => this.refreshNow() in its constructor.
@@ -49,8 +52,19 @@ const handleNetworkError = (error: AxiosError, problemDetails: ProblemDetails): 
         } as ApiError);
     }
 
-    const errorMessage = extractErrorMessage({ ...problemDetails, message: error.message });
-    notificationService.error('Network Error', errorMessage);
+    // Anything with no readable response lands here — genuine offline, a
+    // blocked/interrupted request, or a CORS-stripped error response. In the
+    // overwhelming majority of cases the cause is on the client's side, not the
+    // server, so we frame it as a lost connection rather than a server fault.
+    // Keep the technical detail in the log for diagnostics (e.g. telling an
+    // ERR_NETWORK apart from a CORS-blocked error response) — the toast is
+    // deliberately generic, but this preserves what actually happened.
+    log.warn('Network error (no readable response):', {
+        code: error.code,
+        message: error.message,
+        url: error.config?.url,
+    });
+    notificationService.error('Connection Lost', 'Please check your connection and try again.');
 
     return Promise.reject({
         status: getAxiosErrorCode(error.response),

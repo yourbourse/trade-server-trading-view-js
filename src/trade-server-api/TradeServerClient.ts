@@ -137,7 +137,10 @@ export class TradeServerClient {
             autoReconnect: this.config.websocket.reconnect?.enabled ?? true,
             reconnectDelay: this.config.websocket.reconnect?.delay ?? 5000,
             maxReconnectAttempts: this.config.websocket.reconnect?.maxAttempts ?? 10,
-            heartbeatInterval: 30000,
+            // 10s (vs the lib's 30s default): a revoked session is only detected
+            // when the next heartbeat frame carries the stale API key and the
+            // server closes with 1008, so this bounds worst-case sign-out latency.
+            heartbeatInterval: 10000,
             subscriptionTimeout: 10000,
         });
 

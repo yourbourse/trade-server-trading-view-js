@@ -54,7 +54,7 @@ export class WebSocketClient {
             autoReconnect: true,
             reconnectDelay: 5000,
             maxReconnectAttempts: 10,
-            heartbeatInterval: 30000,
+            heartbeatInterval: 10000,
             subscriptionTimeout: 10000,
             ...options,
         };
