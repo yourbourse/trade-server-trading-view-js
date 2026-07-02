@@ -41,7 +41,7 @@ class NotificationService {
      * Show a notification. Identical title+text+type within DEDUP_WINDOW_MS are suppressed.
      */
     showNotification(title: string, text: string, type: NotificationType = NotificationType.Error): void {
-        const key = `${type}|${title}|${text}`;
+        const key = JSON.stringify([type, title, text]);
         const now = Date.now();
         const last = this.recentKeys.get(key);
         if (last !== undefined && now - last < DEDUP_WINDOW_MS) {

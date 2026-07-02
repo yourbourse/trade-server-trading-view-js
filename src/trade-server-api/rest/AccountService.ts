@@ -110,8 +110,8 @@ export class AccountService {
     /**
      * Get server time in microseconds
      */
-    async getServerTime(): Promise<string> {
+    async getServerTime(): Promise<string | undefined> {
         const result = await this.healthCheck();
-        return result?.now ?? '';
+        return result?.now;
     }
 }

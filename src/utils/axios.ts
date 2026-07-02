@@ -129,9 +129,11 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
         // itself signs out if /refresh fails; the original request is never
         // auto-resent, so a successful probe just asks the user to retry.
         if ((status === 401 || status === 403 || status === 502) && refreshProbeHandler) {
-            void refreshProbeHandler().then((ok) => {
-                if (ok) notificationService.success('Reconnected', 'Please try your last action again.');
-            });
+            void refreshProbeHandler()
+                .then((ok) => {
+                    if (ok) notificationService.success('Reconnected', 'Please try your last action again.');
+                })
+                .catch((err) => log.error('Refresh probe failed unexpectedly:', err));
         }
     }
 
