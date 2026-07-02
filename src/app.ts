@@ -201,6 +201,9 @@ class TradingApp {
         }
         try {
             const response = await this.tradeServerClient.auth.signIn(username);
+            if (!response) {
+                throw new Error('Invalid response from server. Authentication failed.');
+            }
             logger.info('Authentication successful:', response);
 
             persistApiToken(response);

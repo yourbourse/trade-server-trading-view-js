@@ -60,7 +60,7 @@ export class TradingService {
      * Place a new order
      * POST /order
      */
-    async placeOrder(order: PlaceOrder): Promise<Order> {
+    async placeOrder(order: PlaceOrder): Promise<Order | undefined> {
         this.log.info(`Placing order:`, order);
         return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
     }
@@ -91,7 +91,7 @@ export class TradingService {
         orderId: number,
         stopLoss: number | null = null,
         takeProfit: number | null = null
-    ): Promise<ModifySltpResult> {
+    ): Promise<ModifySltpResult | undefined> {
         this.log.info(`Modifying order SL/TP: ${orderId}`);
         const body: ModifyOrderSltp = { id: orderId };
         if (stopLoss !== null) {
@@ -111,7 +111,7 @@ export class TradingService {
     async getOrders(
         filter: OpenOrderRequestFilter = {},
         nextToken: string | null = null
-    ): Promise<WorkingOrdersCollection> {
+    ): Promise<WorkingOrdersCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, sdkGetOrders, filter, extraHeaders);
     }
@@ -120,7 +120,7 @@ export class TradingService {
      * Get a single open order by ID
      * POST /orders/open/single
      */
-    async getOrder(orderId: number): Promise<Order> {
+    async getOrder(orderId: number): Promise<Order | undefined> {
         return await executeAuthenticatedRequest(this.user, sdkGetOrder, { orderId });
     }
 
@@ -132,7 +132,7 @@ export class TradingService {
         let nextToken: string | undefined = undefined;
 
         do {
-            const result: WorkingOrdersCollection = await this.getOrders(filter, nextToken ?? null);
+            const result: WorkingOrdersCollection | undefined = await this.getOrders(filter, nextToken ?? null);
             const orders = result?.orders || [];
             allOrders = allOrders.concat(orders);
             nextToken = result?.nextToken;
@@ -148,7 +148,7 @@ export class TradingService {
     async getOrderHistory(
         filter: OrderHistoryPageRequestFilter = {},
         nextToken: string | null = null
-    ): Promise<OrdersHistoryCollection> {
+    ): Promise<OrdersHistoryCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, getOrdersHistory, filter, extraHeaders);
     }
@@ -157,7 +157,7 @@ export class TradingService {
      * Get a single historical order by ID
      * POST /orders/completed/single
      */
-    async getHistoricalOrder(orderId: number): Promise<Order> {
+    async getHistoricalOrder(orderId: number): Promise<Order | undefined> {
         return await executeAuthenticatedRequest(this.user, getHistoryOrder, { orderId });
     }
 
@@ -169,7 +169,7 @@ export class TradingService {
         let nextToken: string | undefined = undefined;
 
         do {
-            const result: OrdersHistoryCollection = await this.getOrderHistory(filter, nextToken ?? null);
+            const result: OrdersHistoryCollection | undefined = await this.getOrderHistory(filter, nextToken ?? null);
             const orders = result?.orders || [];
             allOrders = allOrders.concat(orders);
             nextToken = result?.nextToken;
@@ -183,7 +183,7 @@ export class TradingService {
      */
     async cancelAllOrders(symbol: string | null = null): Promise<PromiseSettledResult<unknown>[]> {
         this.log.info(`Canceling all orders${symbol ? ` for ${symbol}` : ''}`);
-        const result: WorkingOrdersCollection = await this.getOrders(symbol ? { symbolName: symbol } : {});
+        const result: WorkingOrdersCollection | undefined = await this.getOrders(symbol ? { symbolName: symbol } : {});
         const orders = result?.orders || [];
         const cancelPromises = orders
             .filter((order) => order.st === 'Working' || order.st === 'Inactive')
@@ -201,7 +201,7 @@ export class TradingService {
     async getPositions(
         filter: OpenPositionRequestFilter = {},
         nextToken: string | null = null
-    ): Promise<PositionsCollection> {
+    ): Promise<PositionsCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, sdkGetPositions, filter, extraHeaders);
     }
@@ -210,7 +210,7 @@ export class TradingService {
      * Get a single position by ID
      */
     async getPositionById(positionId: number): Promise<Position | null> {
-        const result: { positions?: Position[] } = await this.getPositions({});
+        const result: { positions?: Position[] } | undefined = await this.getPositions({});
         const positions = result?.positions || [];
         return positions.find((p: Position) => p.id === positionId) || null;
     }
@@ -233,7 +233,7 @@ export class TradingService {
         let nextToken: string | undefined = undefined;
 
         do {
-            const result: { positions?: Position[]; nextToken?: string } = await this.getPositions(
+            const result: { positions?: Position[]; nextToken?: string } | undefined = await this.getPositions(
                 filter,
                 nextToken ?? null
             );
@@ -253,7 +253,7 @@ export class TradingService {
         positionId: number,
         stopLoss: number | null = null,
         takeProfit: number | null = null
-    ): Promise<ModifySltpResult> {
+    ): Promise<ModifySltpResult | undefined> {
         this.log.info(`Modifying position SL/TP: ${positionId}`);
         const body: ModifyPositionSltp = { id: positionId };
         if (stopLoss !== null) {
@@ -275,7 +275,7 @@ export class TradingService {
     async getTradeHistory(
         filter: TradeHistoryPageRequestFilter = {},
         nextToken: string | null = null
-    ): Promise<TradeCollection> {
+    ): Promise<TradeCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, getTrades, filter, extraHeaders);
     }
@@ -288,7 +288,7 @@ export class TradingService {
         let nextToken: string | undefined = undefined;
 
         do {
-            const result: TradeCollection = await this.getTradeHistory(filter, nextToken ?? null);
+            const result: TradeCollection | undefined = await this.getTradeHistory(filter, nextToken ?? null);
             const trades = result?.trades || [];
             allTrades = allTrades.concat(trades);
             nextToken = result?.nextToken;
@@ -301,7 +301,7 @@ export class TradingService {
      * Get specific trade by ID
      */
     async getTrade(tradeId: number): Promise<Trade> {
-        const result: TradeCollection = await this.getTradeHistory({});
+        const result: TradeCollection | undefined = await this.getTradeHistory({});
         if (!result) {
             throw new Error(`Failed to fetch trade history`);
         }

@@ -238,6 +238,9 @@ export class TradeServerClient {
         try {
             this.log.info('Refreshing token…');
             const token = await this.auth.refreshToken();
+            if (!token) {
+                throw new Error('Empty response from /refresh');
+            }
             persistApiToken(token);
             if (this.wsClient) {
                 this.rotateWebSocketAuth();

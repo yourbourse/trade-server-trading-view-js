@@ -23,10 +23,10 @@ export class AuthService {
      * @param username - User login
      * @returns API token information
      */
-    async signIn(username: string | number): Promise<ApiToken> {
+    async signIn(username: string | number): Promise<ApiToken | undefined> {
         this.log.info(`Signing in user: ${username}`);
         const body = { login: username };
-        const response: ApiToken = await executeAuthenticatedRequest(this.user, postAuthorize, body, undefined, {
+        const response = await executeAuthenticatedRequest<ApiToken>(this.user, postAuthorize, body, undefined, {
             // Opt out of the 401/502 refresh probe — sign-in owns its own error display.
             // throwOnError lets signin.ts's catch see err.status for better messages.
             __ignoreStatusCodes: [401, 403],
@@ -53,9 +53,9 @@ export class AuthService {
      * signature; the request body is unused (spec types it as `unknown`).
      * @returns New API token information
      */
-    async refreshToken(): Promise<ApiToken> {
+    async refreshToken(): Promise<ApiToken | undefined> {
         this.log.info('Refreshing API token');
-        const response: ApiToken = await executeAuthenticatedRequest(this.user, postRefresh, {}, undefined, {
+        const response = await executeAuthenticatedRequest<ApiToken>(this.user, postRefresh, {}, undefined, {
             // Opt out of the 401/403/502 refresh probe to prevent recursion.
             // throwOnError makes doRefresh's catch see the real rejection.
             __ignoreStatusCodes: [401, 403, 502],
@@ -80,7 +80,7 @@ export class AuthService {
      * POST /logout
      * @returns Success response
      */
-    async logout(): Promise<SuccessResponse> {
+    async logout(): Promise<SuccessResponse | undefined> {
         this.log.info('Logging out user');
         return await executeAuthenticatedRequest(this.user, logout, {});
     }

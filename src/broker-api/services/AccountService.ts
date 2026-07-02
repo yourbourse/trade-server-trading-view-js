@@ -341,7 +341,7 @@ export class AccountService {
         try {
             logger.debug('Fetching transfer history from API...');
             const result = await this.api.account.getTransfersHistory({ maxResults: 50, sortOrder: 'desc' });
-            const transfers = result.transfers || [];
+            const transfers = result?.transfers || [];
 
             if (!Array.isArray(transfers) || transfers.length === 0) {
                 logger.warn('No transfers returned from API');

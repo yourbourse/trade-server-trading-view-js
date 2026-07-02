@@ -319,7 +319,7 @@ export class OrderService {
                 orderParams.tp = preOrder.takeProfit;
             }
 
-            const result: TradeServerOrder = await this.api.trading.placeOrder(orderParams);
+            const result: TradeServerOrder | undefined = await this.api.trading.placeOrder(orderParams);
 
             if (!result || !result.id) {
                 throw new Error('Order placement failed');

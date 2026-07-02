@@ -143,7 +143,7 @@ async function executeAuthenticatedRequest<T = any>(
     body: unknown,
     extraHeaders?: Record<string, string>,
     requestOptions?: Record<string, unknown>
-): Promise<T> {
+): Promise<T | undefined> {
     const authHeaders = extraHeaders
         ? { ...getPOSTHeaders(user, body, 'timestamp'), ...extraHeaders }
         : getPOSTHeaders(user, body, 'timestamp');
@@ -166,7 +166,7 @@ async function executeAuthenticatedGet<T = any>(
     sdkFunction: Function,
     extraHeaders?: Record<string, string>,
     requestOptions?: Record<string, unknown>
-): Promise<T> {
+): Promise<T | undefined> {
     const headers = extraHeaders ? { ...getGETHeaders(user), ...extraHeaders } : getGETHeaders(user);
     const response = await sdkFunction({
         client: publicClient,
@@ -186,7 +186,7 @@ async function executeAuthenticatedDeleteWithPath<T = any>(
     sdkFunction: Function,
     path: Record<string, string>,
     requestOptions?: Record<string, unknown>
-): Promise<T> {
+): Promise<T | undefined> {
     const authHeaders = getDELETEHeaders(user);
     const response = await sdkFunction({
         client: publicClient,
