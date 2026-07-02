@@ -196,6 +196,10 @@ export class TradeServerClient {
      */
     disconnect(): void {
         this.stopTokenRefresh();
+        // Drop the closure capturing this instance so a torn-down client can't
+        // still be invoked as the axios refresh probe (e.g. app re-init without
+        // a full page reload).
+        setRefreshProbeHandler(null);
         if (this.wsClient) {
             this.wsClient.disconnect();
             this.wsClient = null;
@@ -270,6 +274,13 @@ export class TradeServerClient {
             );
             return true;
         } catch (err) {
+            // Same rationale as the success-path check above: disconnect() may
+            // have already run while refreshToken() was in flight, in which case
+            // this failure isn't a real auth problem — don't redirect to sign-in.
+            if (!this.wsClient) {
+                this.log.debug('Disconnected during refresh failure; skipping sign-out');
+                return false;
+            }
             this.log.error('Token refresh failed, signing out:', err);
             signOut('session_ended');
             return false;
@@ -364,11 +375,18 @@ export class TradeServerClient {
         };
         const onSubscriptionsConfirmed = () => cb('connected');
         const onReconnecting = () => cb('reconnecting');
+        // Raw transport close — covers autoReconnect being disabled (or any
+        // other close that never reaches reconnect_exhausted), so the UI
+        // doesn't stay stuck on a stale state. When a reconnect *is* about to
+        // be scheduled, 'reconnecting' follows immediately after, which is an
+        // accurate reflection of what's actually happening.
+        const onDisconnected = () => cb('disconnected');
         const onExhausted = () => cb('disconnected');
         const onDegraded = () => cb('degraded');
         subs.subscribe('connected', onConnected);
         subs.subscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
         subs.subscribe('reconnecting', onReconnecting);
+        subs.subscribe('disconnected', onDisconnected);
         subs.subscribe('reconnect_exhausted', onExhausted);
         subs.subscribe('subscription_degraded', onDegraded);
 
@@ -380,6 +398,7 @@ export class TradeServerClient {
             subs.unsubscribe('connected', onConnected);
             subs.unsubscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
             subs.unsubscribe('reconnecting', onReconnecting);
+            subs.unsubscribe('disconnected', onDisconnected);
             subs.unsubscribe('reconnect_exhausted', onExhausted);
             subs.unsubscribe('subscription_degraded', onDegraded);
         };

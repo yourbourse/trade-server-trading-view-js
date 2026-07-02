@@ -18,7 +18,7 @@ const log = logger.child('AxiosInterceptor');
 // A no-op when no handler is registered (e.g. sign-in page).
 let refreshProbeHandler: (() => Promise<boolean>) | null = null;
 
-export function setRefreshProbeHandler(fn: () => Promise<boolean>): void {
+export function setRefreshProbeHandler(fn: (() => Promise<boolean>) | null): void {
     refreshProbeHandler = fn;
 }
 
