@@ -27,7 +27,7 @@ export class AuthService {
         this.log.info(`Signing in user: ${username}`);
         const body = { login: username };
         const response = await executeAuthenticatedRequest<ApiToken>(this.user, postAuthorize, body, undefined, {
-            // Opt out of the 401/502 refresh probe — sign-in owns its own error display.
+            // Opt out of the 401/403 refresh probe — sign-in owns its own error display.
             // throwOnError lets signin.ts's catch see err.status for better messages.
             __ignoreStatusCodes: [401, 403],
             throwOnError: true,
