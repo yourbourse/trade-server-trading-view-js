@@ -63,7 +63,10 @@ export function handleMutationError(
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
     const status = getErrorStatus(error);
-    if (status !== undefined && status >= 500) {
+    // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
+    // mutation-specific toast here too would double up with the probe's own
+    // "Reconnected" notice for what's the same underlying stale-session event.
+    if (status !== undefined && status >= 500 && status !== 502) {
         notificationService.error(opts.notifyTitle, 'Check your orders before retrying');
     }
     const msg = extractErrorMessage(error);
