@@ -48,15 +48,19 @@ class NotificationService {
             this.log.debug(`Suppressing duplicate notification: ${title}`);
             return;
         }
-        this.pruneRecentKeys(now);
-        this.recentKeys.set(key, now);
 
         if (!this.showNotificationFn) {
-            // Queue notification if service not initialized yet — dedup applies on flush too
+            // Queue notification if service not initialized yet — dedup applies on flush too.
+            // Don't record the key here: recording it now (before the notification is ever
+            // actually shown) would make initialize()'s flush see it as a "duplicate" of
+            // itself and suppress the only delivery.
             this.log.warn('Notification service not initialized, queuing notification');
             this.pendingNotifications.push({ title, text, type });
             return;
         }
+
+        this.pruneRecentKeys(now);
+        this.recentKeys.set(key, now);
 
         this.log.debug(`Showing ${NotificationType[type]} notification: ${title}`);
         this.showNotificationFn(title, text, type);
