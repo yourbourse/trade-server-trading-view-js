@@ -17,10 +17,8 @@ export interface WebSocketClientOptions {
     apiKey: string;
     /** Auto-reconnect on disconnect */
     autoReconnect?: boolean;
-    /** Reconnect delay in milliseconds */
+    /** Fixed delay between reconnect attempts, in milliseconds. Reconnection retries indefinitely. */
     reconnectDelay?: number;
-    /** Maximum reconnect attempts (0 = infinite) */
-    maxReconnectAttempts?: number;
     /** Heartbeat interval in milliseconds */
     heartbeatInterval?: number;
     /** Subscription timeout in milliseconds */
@@ -51,15 +49,14 @@ export class WebSocketClient {
     // True once the socket has completed at least one successful open. Distinct
     // from reconstructing "was this a reconnect" via reconnectAttempts, which
     // reconnect() intentionally zeroes before calling connect() — reusing that
-    // counter here would make onopen wrongly treat a manual post-exhaustion
-    // reconnect as a fresh (non-reconnect) connection and skip re-subscription.
+    // counter here would make onopen wrongly treat a manual reconnect (e.g. after
+    // a long outage) as a fresh (non-reconnect) connection and skip re-subscription.
     private hasConnectedOnce = false;
 
     constructor(options: WebSocketClientOptions) {
         this.options = {
             autoReconnect: true,
-            reconnectDelay: 5000,
-            maxReconnectAttempts: 10,
+            reconnectDelay: 2000,
             heartbeatInterval: 10000,
             subscriptionTimeout: 10000,
             ...options,
@@ -115,8 +112,8 @@ export class WebSocketClient {
     }
 
     /**
-     * Reset the reconnect counter and attempt a fresh connection.
-     * Used by the UI's "Reconnect" button after exhausted attempts.
+     * Reset the reconnect counter and attempt a fresh connection immediately,
+     * without waiting for the next scheduled retry.
      * Resetting reconnectAttempts here is safe for onopen's "was this a
      * reconnect" check — that check reads hasConnectedOnce, not
      * reconnectAttempts, so re-subscription still fires correctly afterward.
@@ -263,17 +260,11 @@ export class WebSocketClient {
             return; // Already scheduled
         }
 
-        if (this.options.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-            this.log.error(`Max reconnect attempts (${this.options.maxReconnectAttempts}) reached`);
-            this.subscriptions.notify('reconnect_exhausted', {});
-            return;
-        }
-
         this.reconnectAttempts++;
-        const delay = this.options.reconnectDelay * Math.min(this.reconnectAttempts, 5);
+        const delay = this.options.reconnectDelay;
 
         this.log.info(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
-        this.subscriptions.notify('reconnecting', { attempt: this.reconnectAttempts, max: this.options.maxReconnectAttempts });
+        this.subscriptions.notify('reconnecting', { attempt: this.reconnectAttempts });
 
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;

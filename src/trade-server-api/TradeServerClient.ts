@@ -140,8 +140,7 @@ export class TradeServerClient {
             url: wsUrl,
             apiKey: this.user.apiKey,
             autoReconnect: this.config.websocket.reconnect?.enabled ?? true,
-            reconnectDelay: this.config.websocket.reconnect?.delay ?? 5000,
-            maxReconnectAttempts: this.config.websocket.reconnect?.maxAttempts ?? 10,
+            reconnectDelay: this.config.websocket.reconnect?.delay ?? 2000,
             // 10s (vs the lib's 30s default): a revoked session is only detected
             // when the next heartbeat frame carries the stale API key and the
             // server closes with 1008, so this bounds worst-case sign-out latency.
@@ -375,19 +374,16 @@ export class TradeServerClient {
         };
         const onSubscriptionsConfirmed = () => cb('connected');
         const onReconnecting = () => cb('reconnecting');
-        // Raw transport close — covers autoReconnect being disabled (or any
-        // other close that never reaches reconnect_exhausted), so the UI
+        // Raw transport close — covers autoReconnect being disabled, so the UI
         // doesn't stay stuck on a stale state. When a reconnect *is* about to
         // be scheduled, 'reconnecting' follows immediately after, which is an
         // accurate reflection of what's actually happening.
         const onDisconnected = () => cb('disconnected');
-        const onExhausted = () => cb('disconnected');
         const onDegraded = () => cb('degraded');
         subs.subscribe('connected', onConnected);
         subs.subscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
         subs.subscribe('reconnecting', onReconnecting);
         subs.subscribe('disconnected', onDisconnected);
-        subs.subscribe('reconnect_exhausted', onExhausted);
         subs.subscribe('subscription_degraded', onDegraded);
 
         // Replay: autoSubscribe() runs (and may already have failed a channel)
@@ -399,14 +395,13 @@ export class TradeServerClient {
             subs.unsubscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
             subs.unsubscribe('reconnecting', onReconnecting);
             subs.unsubscribe('disconnected', onDisconnected);
-            subs.unsubscribe('reconnect_exhausted', onExhausted);
             subs.unsubscribe('subscription_degraded', onDegraded);
         };
     }
 
     /**
-     * Reset the reconnect counter and attempt a fresh connection.
-     * Used by the UI after exhausted reconnect attempts.
+     * Reset the reconnect counter and attempt a fresh connection immediately,
+     * without waiting for the next scheduled retry.
      * Must be called after connect().
      */
     reconnect(): void {

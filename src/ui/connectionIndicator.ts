@@ -17,7 +17,7 @@ export function initConnectionIndicator(client: TradeServerClient): () => void {
     el.appendChild(dot);
     el.appendChild(label);
 
-    function setState(state: 'connected' | 'reconnecting' | 'disconnected' | 'degraded', detail?: string): void {
+    function setState(state: 'connected' | 'reconnecting' | 'disconnected' | 'degraded'): void {
         el!.dataset['state'] = state;
         switch (state) {
             case 'connected':
@@ -25,7 +25,7 @@ export function initConnectionIndicator(client: TradeServerClient): () => void {
                 el!.title = 'Connected';
                 break;
             case 'reconnecting':
-                label.textContent = detail ?? 'Reconnecting…';
+                label.textContent = 'Reconnecting…';
                 el!.title = 'Reconnecting…';
                 break;
             case 'disconnected':
@@ -43,25 +43,10 @@ export function initConnectionIndicator(client: TradeServerClient): () => void {
     setState('connected');
 
     const dispose = client.onConnectionStateChange((state) => {
-        if (state !== 'reconnecting') {
-            setState(state);
-        }
-        // 'reconnecting' is handled by the direct subscription below (has attempt count)
+        setState(state);
     });
-
-    // Also subscribe directly to reconnecting event to get attempt count
-    const subs = client.websocket.getSubscriptions();
-    const onReconnecting = (data: unknown) => {
-        const d = data as { attempt?: number; max?: number };
-        const detail = d.attempt !== undefined && d.max !== undefined
-            ? `Reconnecting… (${d.attempt}/${d.max})`
-            : 'Reconnecting…';
-        setState('reconnecting', detail);
-    };
-    subs.subscribe('reconnecting', onReconnecting);
 
     return () => {
         dispose();
-        subs.unsubscribe('reconnecting', onReconnecting);
     };
 }
