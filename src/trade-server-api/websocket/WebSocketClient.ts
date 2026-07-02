@@ -142,11 +142,22 @@ export class WebSocketClient {
         this.manuallyClosed = false;
 
         return new Promise((resolve, reject) => {
+            // Tracks whether THIS connect() call's promise has settled yet (via
+            // onopen below). Needed because onclose unconditionally clears
+            // isConnecting, which defeats both the 1008 check and the timeout
+            // guard's own isConnecting check — without this, a close that
+            // arrives before the first successful open (e.g. unreachable host,
+            // DNS failure, TLS/handshake error — any non-1008 reason) would
+            // leave this promise settled neither by onopen, onclose, nor the
+            // timeout, hanging the caller (e.g. app init) forever.
+            let settled = false;
+
             try {
                 this.log.info(`Connecting to WebSocket: ${this.options.url}`);
                 this.ws = new WebSocket(this.options.url);
 
                 this.ws.onopen = () => {
+                    settled = true;
                     // hasConnectedOnce (not reconnectAttempts) is the source of truth for
                     // "is this a reconnect" — reconnect() resets reconnectAttempts to 0
                     // before calling connect(), so that counter alone would misclassify
@@ -203,10 +214,23 @@ export class WebSocketClient {
                         }
                         // If 1008 arrives before onopen (rejected during the initial
                         // handshake), settle the in-flight connect() promise so its
-                        // awaiter doesn't hang — the timeout guard won't fire because
-                        // isConnecting is already false. No-op if already resolved.
+                        // awaiter doesn't hang. No-op if already resolved.
+                        settled = true;
                         reject(new WebSocketConnectionError('WebSocket closed by server policy (1008)'));
                         return;
+                    }
+
+                    // Any other close before the first successful open (unreachable
+                    // host, DNS failure, TLS/handshake error, etc.) — reject so the
+                    // caller doesn't hang forever. A close after a prior successful
+                    // open is a no-op here since the promise already resolved.
+                    if (!settled) {
+                        settled = true;
+                        reject(
+                            new WebSocketConnectionError(
+                                `WebSocket closed before connecting (code: ${event.code}, reason: ${event.reason})`
+                            )
+                        );
                     }
 
                     if (this.options.autoReconnect && !this.manuallyClosed) {
