@@ -91,6 +91,12 @@ body {
     50% { opacity: 0.4; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    #connection-status[data-state='reconnecting'] .connection-dot {
+        animation: none;
+    }
+}
+
 /* Logout Button */
 #logout-btn {
     background: rgba(255, 255, 255, 0.2);
