@@ -1,9 +1,9 @@
 asyncapi: 3.0.0
 info:
   title: Your Bourse Trading Platform WebSocket API
-  version: 26.2.23
+  version: 0.0.1251
   description: >-
-    [Download](/docs/ws-api/asyncapi.yaml) AsyncAPI specification.
+    [Download](/ws-api/asyncapi.yaml) AsyncAPI specification.
 
 
     # General API Information
@@ -129,8 +129,8 @@ info:
       },
       "s": false,
       "e": {
-        "code": 10,
-        "msg": "Symbol not found",
+        "code": 1,
+        "msg": "Not found",
         "detail": "EURUSD"
       },
       "reqId": "ABC777816"
@@ -266,6 +266,17 @@ channels:
         $ref: '#/components/messages/BookItems'
       BookSubscriptionRequestAck:
         $ref: '#/components/messages/BookSubscriptionRequestAck'
+  market_status:
+    address: market_status
+    messages:
+      MarketStatusSubscribeRequest:
+        $ref: '#/components/messages/MarketStatusSubscribeRequest'
+      MarketStatusUnsubscribeRequest:
+        $ref: '#/components/messages/MarketStatusUnsubscribeRequest'
+      MarketStatuses:
+        $ref: '#/components/messages/MarketStatuses'
+      MarketStatusSubscriptionRequestAck:
+        $ref: '#/components/messages/MarketStatusSubscriptionRequestAck'
   heartbeat:
     address: heartbeat
     messages:
@@ -425,6 +436,22 @@ operations:
     messages:
       - $ref: '#/channels/L2/messages/BookSubscriptionRequestAck'
       - $ref: '#/channels/L2/messages/BookItems'
+  MarketStatusSubscription:
+    action: receive
+    channel:
+      $ref: '#/channels/market_status'
+    summary: Subscribe/unsubscribe for market session status updates.
+    messages:
+      - $ref: '#/channels/market_status/messages/MarketStatusSubscribeRequest'
+      - $ref: '#/channels/market_status/messages/MarketStatusUnsubscribeRequest'
+  MarketStatusUpdates:
+    action: send
+    channel:
+      $ref: '#/channels/market_status'
+    summary: Market session status updates (quote and trade session).
+    messages:
+      - $ref: '#/channels/market_status/messages/MarketStatusSubscriptionRequestAck'
+      - $ref: '#/channels/market_status/messages/MarketStatuses'
   Heartbeat:
     action: send
     channel:
@@ -699,7 +726,61 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/BookItems'
+    MarketStatusSubscribeRequest:
+      name: MarketStatusSubscribeRequest
+      title: Subscribe for market session status updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MarketStatusSubscribeRequest'
+    MarketStatusUnsubscribeRequest:
+      name: MarketStatusUnsubscribeRequest
+      title: Unsubscribe from market session status updates.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MarketStatusUnsubscribeRequest'
+    MarketStatusSubscriptionRequestAck:
+      name: MarketStatusSubscriptionRequestAck
+      title: Subscription request acknowledgement
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MarketStatusSubscriptionRequestAck'
+    MarketStatuses:
+      name: MarketStatuses
+      title: Market session status updates
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MarketStatuses'
   schemas:
+    ApiErrorCode:
+      title: ApiErrorCode
+      type: integer
+      description: >-
+        Numeric error code. The following table lists all possible values:
+
+        | Code | Description                          |
+        |------|--------------------------------------|
+        | 0    | Successful operation                 |
+        | 1    | Not found                            |
+        | 2    | Server is not ready                  |
+        | 3    | Invalid parameter                    |
+        | 4    | Invalid target                       |
+        | 5    | Invalid 'NextToken'                  |
+        | 6    | Invalid header                       |
+        | 7    | Invalid version                      |
+        | 8    | Internal error                       |
+        | 9    | Dependencies exist                   |
+        | 10   | AlreadyExists                        |
+        | 11   | Invalid payload                      |
+        | 12   | Not allowed                          |
+        | 13   | Operation not permitted              |
+        | 14   | Business logic error                 |
+        | 15   | Invalid Id                           |
+        | 16   | Data changed                         |
+        | 17   | Identifier cannot be reused          |
+        | 100  | No market depth                      |
+        | 101  | Invalid market depth                 |
+      example: 14
+
     Locale:
       title: Locale
       description: Locale (language) id.
@@ -779,6 +860,37 @@ components:
         - d
       example: d
       description: 'Response type: `d` - delete.'
+    SymbolSessionStatus:
+      title: SymbolSessionStatus
+      type: string
+      enum:
+        - Open
+        - Closed
+      example: Open
+      description: Session status (Open or Closed).
+    MarketStatusChannel:
+      type: string
+      description: Channel name (will always be `market_status`).
+      enum:
+        - market_status
+      example: market_status
+    MarketStatusItem:
+      title: MarketStatusItem
+      type: object
+      properties:
+        s:
+          $ref: '#/components/schemas/SymbolName'
+        qs:
+          $ref: '#/components/schemas/SymbolSessionStatus'
+        ts:
+          $ref: '#/components/schemas/SymbolSessionStatus'
+      required:
+        - s
+      additionalProperties: false
+      description: >-
+        Market session status item. In snapshot messages both `qs` and `ts`
+        are always present. In update messages only the field(s) that changed
+        are included (partial update).
     BalancesChannel:
       type: string
       description: Channel name (will always be `balances`).
@@ -1163,6 +1275,14 @@ components:
           description: Margin requirements for account.
           type: number
           example: 102.19
+        as:
+          description: Exchange Assets.
+          type: number
+          example: 13950.00
+        ls:
+          description: Exchange Liabilities.
+          type: number
+          example: 0
         c:
           type: string
           example: USD
@@ -1179,6 +1299,8 @@ components:
         - pl
         - e
         - m
+        - as
+        - ls
         - c
       additionalProperties: false
 
@@ -1599,10 +1721,15 @@ components:
           description: Unrealised profit/loss.
           type: number
           example: 19.4739
+        m:
+          description: Margin required for the position.
+          type: number
+          example: 1250.50
       required:
         - id
         - mp
         - pl
+        - m
       additionalProperties: false
     PositionDeleted:
       title: Deleted position
@@ -2132,10 +2259,41 @@ components:
           description: Best ask size.
           type: number
           example: 500000
+        bh:
+          description: Bid high - highest bid price for the day.
+          type: number
+          example: 44.80
+        bl:
+          description: Bid low - lowest bid price for the day.
+          type: number
+          example: 42.10
+        ah:
+          description: Ask high - highest ask price for the day.
+          type: number
+          example: 45.50
+        al:
+          description: Ask low - lowest ask price for the day.
+          type: number
+          example: 43.20
+        bc:
+          description: Bid close - last bid price of the previous trading day.
+          type: number
+          example: 42.00
+        ac:
+          description: Ask close - last ask price of the previous trading day.
+          type: number
+          example: 43.00
         t:
           description: Timestamp (microseconds since the Unix epoch).
           type: number
           example: 1778942400000000
+        re:
+          description: >-
+            Reset extrema flag. When true, the subscriber should discard all previously
+            cached daily extrema for this symbol and apply only the extrema provided in
+            this message.
+          type: boolean
+          example: true
       required:
         - s
         - bp
@@ -2273,12 +2431,44 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PriceBand'
+        ah:
+          description: Ask high - highest ask price for the day.
+          type: number
+          example: 45.50
+        al:
+          description: Ask low - lowest ask price for the day.
+          type: number
+          example: 43.20
+        bh:
+          description: Bid high - highest bid price for the day.
+          type: number
+          example: 44.80
+        bl:
+          description: Bid low - lowest bid price for the day.
+          type: number
+          example: 42.10
+        bc:
+          description: Bid close - last bid price of the previous trading day.
+          type: number
+          example: 42.00
+        ac:
+          description: Ask close - last ask price of the previous trading day.
+          type: number
+          example: 43.00
         s:
           $ref: '#/components/schemas/SymbolName'
         t:
           description: Timestamp (microseconds since the Unix epoch).
           type: number
           example: 1778942400000000
+        re:
+          description: >-
+            Reset extrema flag. When true, the subscriber should discard all previously
+            cached daily extrema for this symbol and apply only the extrema provided in
+            this message. Set whenever the daily extrema are reset (e.g., at the start
+            of a new trading day).
+          type: boolean
+          example: true
       required:
         - s
         - t
@@ -2294,8 +2484,15 @@ components:
             - 80
           - - 35.6
             - 30
+        ah: 45.50
+        al: 43.20
+        bh: 44.80
+        bl: 42.10
+        bc: 42.00
+        ac: 43.00
         s: EURUSD
         t: 1778942400000000
+        re: true
     PriceBand:
       title: PriceBand
       type: array
@@ -2438,6 +2635,108 @@ components:
         - p
         - s
       additionalProperties: false
+    MarketStatusSubscribeRequest:
+      title: MarketStatusSubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscribeMethod'
+        c:
+          $ref: '#/components/schemas/MarketStatusChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+            streaming:
+              description: If `true`, snapshot + updates stream; if `false`, only snapshot will be provided.
+              type: boolean
+              default: false
+              example: false
+          required:
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    MarketStatusUnsubscribeRequest:
+      title: MarketStatusUnsubscribeRequest
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/UnsubscribeMethod'
+        c:
+          $ref: '#/components/schemas/MarketStatusChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - s
+          additionalProperties: false
+        h:
+          $ref: '#/components/schemas/CommonHeaders'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - h
+      additionalProperties: false
+    MarketStatusSubscriptionRequestAck:
+      title: MarketStatusSubscriptionRequestAck
+      type: object
+      properties:
+        m:
+          $ref: '#/components/schemas/SubscriptionMethod'
+        c:
+          $ref: '#/components/schemas/MarketStatusChannel'
+        p:
+          type: object
+          properties:
+            s:
+              $ref: '#/components/schemas/SymbolName'
+          required:
+            - s
+          additionalProperties: false
+        s:
+          $ref: '#/components/schemas/Status'
+        e:
+          $ref: '#/components/schemas/Error'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - m
+        - c
+        - p
+        - s
+      additionalProperties: false
+    MarketStatuses:
+      title: MarketStatuses
+      type: object
+      properties:
+        c:
+          $ref: '#/components/schemas/MarketStatusChannel'
+        t:
+          $ref: '#/components/schemas/ResponseType'
+        d:
+          $ref: '#/components/schemas/MarketStatusItem'
+        reqId:
+          $ref: '#/components/schemas/reqId'
+      required:
+        - c
+        - t
+        - d
+      additionalProperties: false
     Status:
       title: Status
       description: Status (`true` - success, `false` - failure).
@@ -2492,9 +2791,7 @@ components:
       type: object
       properties:
         code:
-          type: number
-          description: Error code number
-          example: 10
+          $ref: '#/components/schemas/ApiErrorCode'
         msg:
           type: string
           example: Symbol not found

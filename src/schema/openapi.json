@@ -3,7 +3,7 @@
   "info": {
     "title": "Your Bourse Trading Platform REST API",
     "description": "This document serves as high-level specifications for [Your Bourse](https://yourbourse.com)'s trading platform REST APIs.\n\nAll requests should contain the `X-YB-API-Key` header with the public API token.\n\nAll field names and values are **case-sensitive**, unless noted otherwise.\n\n# HMAC authentication\n\nAll `POST`, `PUT` and `DELETE` requests must contain HMAC signature. For [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) a pair of private and public API tokens is used.\n\nThere are two methods to generate HMAC signature: 1) with nonce, or 2) with timestamp.\n\n**1) Nonce + HMAC signature:**\n\n1. Add `X-YB-Nonce` header with nonce value. Please note that its value should be higher than any nonce sent in the previous requests.\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n   *Example with non-empty body:*\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Nonce=1464264688310\n   ```\n\n   *Example with empty body (e.g., `DELETE` requests):*\n   ```\n   Content=\n   Nonce=1464264688310\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**2) Timestamp + HMAC signature:**\n\n1. Add `X-YB-Timestamp` header with timestamp value (microseconds since Unix epoch).\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n   *Example with non-empty body:*\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Timestamp=1738066591010786\n   ```\n\n   *Example with empty body (e.g., `DELETE` requests):*\n   ```\n   Content=\n   Timestamp=1738066591010786\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**Example: signing a `DELETE /order/{orderId}` request**\n\nBelow is a complete `curl` example for cancelling an order. Because the request body is empty, the value of `Content` in the string to sign is an empty string, but the `Content=` line and the `\\n` separator before `Nonce=` (or `Timestamp=`) must still be present. The HMAC hash is base64url-encoded (RFC 4648 §5) without `=` padding.\n\n```bash\nAPI_KEY=\"vJJErCZDZBD07z1p4Ed91t0qob6bAL\"\nSECRET=\"frieUMo6AdidOMp7XQVSfGRTRyF5hktoRX5Pk0ijujatIHBbNvXQSO4kUyirSHF\"\nORDER_ID=12345\nNONCE=1464264688310\n\n# String to sign — literally `Content=\\nNonce=<nonce>` with no trailing newline.\nSTRING_TO_SIGN=$(printf 'Content=\\nNonce=%s' \"$NONCE\")\n\n# HMAC-SHA256, then base64url without `=` padding.\nSIGN=$(printf '%s' \"$STRING_TO_SIGN\" \\\n  | openssl dgst -sha256 -hmac \"$SECRET\" -binary \\\n  | openssl base64 -A | tr '+/' '-_' | tr -d '=')\n\ncurl -X DELETE \"https://<host>:<port>/api/v1/order/$ORDER_ID\" \\\n  -H \"X-YB-API-Key: $API_KEY\" \\\n  -H \"X-YB-Nonce: $NONCE\" \\\n  -H \"X-YB-Sign: $SIGN\"\n```\n\nTo sign with a timestamp instead, use a microsecond timestamp in place of the nonce, write `Timestamp=` instead of `Nonce=` in the string to sign, and send it in the `X-YB-Timestamp` header instead of `X-YB-Nonce`.\n\n# Conditional GETs\n\nIf a GET request to a resource does not have the `If-None-Match` header, server always returns resource version in the `ETag` header.\n\nIf a GET request to a resource has the `If-None-Match` header with the last known resource version but the resource has been updated since, server responds with a new resource representation and includes the new `ETag` header in the response.\n\nIf the value of `If-None-Match` header of a GET request matches the current resource version on the server, the server responds with the `304 Not Modified` status code and empty body. The server includes the `ETag` header to the response.\n\n# Conditional POSTs, PUTs and DELETEs\n\nAll `POST`, `PUT` and `DELETE` requests must contain the `If-Match` header with the last known resource version.\n\nIf the value of `If-Match` header of the request matches the current resource version on the server, the server proceeds with the request. Otherwise, the server responds with the `412 Precondition Failed` status. Client is expected to retrieve the latest resource version and retry the request.\n\nIf the `If-Match` header is not present in the request, status code of `412 Precondition Failed` is returned along with the error details.\n\n# HTTP Return Codes\n| Status code | Error |\n| ----- | ----- |\n| `304 Not Modified` | The requested resource has not been modified since the last time it was accessed. |\n| `400 Bad Request` | Invalid request (e.g., malformed request syntax). |\n| `401 Unauthorized` | 'X-YB-API-Key' header is missing or invalid. |\n| `403 Forbidden` | IP has been auto-banned for continuing to send requests after receiving `429 Too Many Requests` codes. |\n| `404 Not Found` | Either the resource does not exist or client is not permitted to access it. |\n| `412 Precondition Failed` | Conditional request failed. |\n| `413 Request Entity Too Large` | Request size is greater than a pre-defined threshold (security measure to avoid DDoS attacks). |\n| `415 Unsupported Media Type` | Body is not in the `application/json` format. |\n| `429 Too Many Requests` | The client has sent too many requests in a given amount of time and broke a request rate limit. |\n| `500 Internal Server Error` | An unexpected error occurred on server; the issue is on Your Bourse's side. It is important to **NOT** treat this as a failure operation; the execution status is **UNKNOWN** and could have been a success. |\n\n# Rate limits\n\nThe rate limits are based on the IP addresses, not the API keys.\n\nEach route has a `weight` which determines for the number of requests each endpoint counts for. Heavier endpoints and endpoints that do operations on multiple symbols will have a heavier `weight`.\n\nWhen a `429 Too Many Requests` is received, it's your obligation as an API to back off and not spam the API. Repeatedly violating rate limits and/or failing to back off after receiving 429s will result in an automated IP ban (HTTP status `403 Forbidden`). IP bans are tracked and scale in duration for repeat offenders.\n\nA `Retry-After` header is sent with a `403 Forbidden` or `429 Too Many Requests` responses and will give the number of seconds required to wait, in the case of a 429, to prevent a ban, or, in the case of a 403, until the ban is over.\n\nEvery response might contain `X-YB-USED-WEIGHT-(intervalNum)(intervalLetter)` headers with the used weight for the IP address for all request rate limiters defined.\n\n`intervalLetter` could be `S` (second), `M` (minute), `H` (hour) or `D` (day). `intervalNum` describes the amount of the interval. For example, `intervalNum` 10 with `intervalLetter` S means \"Every 10 seconds\".\n\n# Unfilled order count limits\n\nEvery successful order response might contain a `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` header indicating how many orders you have placed for that interval. Rejected/unsuccessful orders are not guaranteed to have `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` headers in the response.\n\nThe rate limit applies to the number of new, unfilled orders placed within a time interval. That is, orders which are partially or fully filled do not count against the rate limit.\n\nUnfilled order count is tracked by trading account and is shared across all IP addresses, all API keys, and all APIs.\n\nIf you have exceeded this, you will receive a `429 Too Many Requests` error without the `Retry-After` header.\n\n# HTTP keep-alive\n\nIt is strongly recommended to enable `Keep-Alive` and reuse HTTP connections to send and receive multiple HTTP requests/responses, as opposed to opening a new connection for every single request/response pair.",
-    "version": "26.5.34"
+    "version": "0.0.1251"
   },
   "servers": [
     {
@@ -3353,7 +3353,33 @@
           "swSat",
           "swM",
           "swYd",
-          "swI"
+          "swI",
+          "mcm",
+          "pcm",
+          "pct",
+          "hm",
+          "im",
+          "mm",
+          "lmr",
+          "mrIB",
+          "mrIS",
+          "mrIBl",
+          "mrISl",
+          "mrIBt",
+          "mrISt",
+          "mrIBtl",
+          "mrIStl",
+          "mrMB",
+          "mrMS",
+          "mrMBl",
+          "mrMSl",
+          "mrMBt",
+          "mrMSt",
+          "mrMBtl",
+          "mrMStl",
+          "mll",
+          "reod",
+          "mchk"
         ],
         "type": "object",
         "properties": {
@@ -3383,6 +3409,12 @@
             "maxLength": 63,
             "description": "Exchange for exchange-traded financial instruments.",
             "example": "NYSE"
+          },
+          "it": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 127,
+            "description": "Industry tag."
           },
           "dp": {
             "type": "integer",
@@ -3638,6 +3670,151 @@
               "IntradayFourTimesPerFullDay"
             ],
             "description": "Swap charge interval. When set to `EndOfDay`, swap is charged once at the end of the trading day and `swSt` field is not included. When set to an intraday value, swap is charged at regular intervals starting from the time specified in `swSt`."
+          },
+          "mcm": {
+            "type": "string",
+            "enum": [
+              "Forex",
+              "CFD",
+              "Futures",
+              "CFDIndex",
+              "CFDLeverage",
+              "Currency",
+              "Collateral",
+              "ExchangeStocks",
+              "ExchangeBonds"
+            ],
+            "description": "Margin calculation mode.",
+            "example": "Forex"
+          },
+          "pcm": {
+            "type": "string",
+            "enum": [
+              "Forex",
+              "CFD",
+              "Futures",
+              "Currency",
+              "Collateral"
+            ],
+            "description": "Profit calculation mode.",
+            "example": "Forex"
+          },
+          "pct": {
+            "type": "number",
+            "format": "double",
+            "description": "Margin percentage multiplier applied to every formula (100 = no change)."
+          },
+          "hm": {
+            "type": "number",
+            "format": "double",
+            "description": "Hedged margin fraction charged for the hedged portion (0.0–1.0)."
+          },
+          "im": {
+            "type": "number",
+            "format": "double",
+            "description": "Per-lot initial margin. Used in Futures mode only."
+          },
+          "mm": {
+            "type": "number",
+            "format": "double",
+            "description": "Per-lot maintenance margin. Used in Futures mode only."
+          },
+          "lmr": {
+            "type": "number",
+            "format": "double",
+            "description": "Liquidity margin rate. Asset contribution to equity in Currency/Collateral mode."
+          },
+          "mrIB": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for buy market orders and open buy positions."
+          },
+          "mrIS": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for sell market orders and open sell positions."
+          },
+          "mrIBl": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending buy limit orders."
+          },
+          "mrISl": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending sell limit orders."
+          },
+          "mrIBt": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending buy stop orders."
+          },
+          "mrISt": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending sell stop orders."
+          },
+          "mrIBtl": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending buy stop-limit orders."
+          },
+          "mrIStl": {
+            "type": "number",
+            "format": "double",
+            "description": "Initial margin rate for pending sell stop-limit orders."
+          },
+          "mrMB": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for open buy positions."
+          },
+          "mrMS": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for open sell positions."
+          },
+          "mrMBl": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending buy limit orders."
+          },
+          "mrMSl": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending sell limit orders."
+          },
+          "mrMBt": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending buy stop orders."
+          },
+          "mrMSt": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending sell stop orders."
+          },
+          "mrMBtl": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending buy stop-limit orders."
+          },
+          "mrMStl": {
+            "type": "number",
+            "format": "double",
+            "description": "Maintenance margin rate for pending sell stop-limit orders."
+          },
+          "mll": {
+            "type": "boolean",
+            "description": "Use the larger leg for hedged margin calculation."
+          },
+          "reod": {
+            "type": "boolean",
+            "description": "Recalculate margin rates at end of day."
+          },
+          "mchk": {
+            "type": "boolean",
+            "description": "Check margin before executing SL/TP orders."
           }
         },
         "additionalProperties": false
@@ -4937,12 +5114,17 @@
       "Now": {
         "title": "Health check",
         "type": "object",
-        "description": "Health check (returns server version and current time).",
+        "description": "Health check (returns server version, current time, and server timezone).",
         "properties": {
           "now": {
             "type": "string",
-            "description": "Current server time (UTC).",
+            "description": "Current server time in UTC.",
             "example": "2025-02-21T14:25:12.610779+00:00"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Server's configured timezone (IANA timezone name).",
+            "example": "Europe/Helsinki"
           },
           "version": {
             "description": "Server version.",
@@ -4952,6 +5134,7 @@
         },
         "required": [
           "now",
+          "timezone",
           "version"
         ],
         "additionalProperties": false
