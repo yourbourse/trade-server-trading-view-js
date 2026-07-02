@@ -192,7 +192,7 @@ export class TradeServerClient {
      *   (as returned by `ApiToken.expiration`). Not milliseconds — do not pass
      *   `Date.now()` here.
      */
-    scheduleTokenRefresh(expirationMicros: number): void {
+    private scheduleTokenRefresh(expirationMicros: number): void {
         const expirationMs = Math.floor(expirationMicros / 1000);
         const delayMs = Math.max(0, expirationMs - Date.now() - TOKEN_REFRESH_SAFETY_MARGIN_MS);
 

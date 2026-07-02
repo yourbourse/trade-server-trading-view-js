@@ -188,6 +188,11 @@ export class WebSocketClient {
                         for (const cb of this.authFailureListeners) {
                             try { cb(); } catch (err) { this.log.error('onAuthFailure listener threw', err); }
                         }
+                        // If 1008 arrives before onopen (rejected during the initial
+                        // handshake), settle the in-flight connect() promise so its
+                        // awaiter doesn't hang — the timeout guard won't fire because
+                        // isConnecting is already false. No-op if already resolved.
+                        reject(new WebSocketConnectionError('WebSocket closed by server policy (1008)'));
                         return;
                     }
 

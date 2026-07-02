@@ -48,6 +48,7 @@ class NotificationService {
             this.log.debug(`Suppressing duplicate notification: ${title}`);
             return;
         }
+        this.pruneRecentKeys(now);
         this.recentKeys.set(key, now);
 
         if (!this.showNotificationFn) {
@@ -59,6 +60,20 @@ class NotificationService {
 
         this.log.debug(`Showing ${NotificationType[type]} notification: ${title}`);
         this.showNotificationFn(title, text, type);
+    }
+
+    /**
+     * Drop dedup keys whose window has elapsed so the cache can't grow
+     * unbounded in a long-lived tab (notification text can carry dynamic
+     * content, producing unique keys). Bounds the map to the distinct
+     * notifications seen within a single DEDUP_WINDOW_MS window.
+     */
+    private pruneRecentKeys(now: number): void {
+        for (const [key, ts] of this.recentKeys) {
+            if (now - ts >= DEDUP_WINDOW_MS) {
+                this.recentKeys.delete(key);
+            }
+        }
     }
 
     /**
