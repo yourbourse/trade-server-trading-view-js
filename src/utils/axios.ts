@@ -6,7 +6,7 @@ import { extractErrorMessage } from '../utils/apiError';
 
 import type { ProblemDetails } from '../schema/public-api';
 import type { SkipUserMessage } from '../types/SkipUserMessage';
-import { logger } from './logger';
+import { logger } from './logger.js';
 import { notificationService } from './notificationService';
 
 import { client as publicAxiosClient } from '../schema/public-api/client.gen';
