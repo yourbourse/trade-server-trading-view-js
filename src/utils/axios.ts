@@ -144,7 +144,11 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
 };
 
 const isNetworkError = (error: AxiosError): boolean => {
-    return error?.code === AxiosError.ERR_NETWORK || error?.message === 'Network Error';
+    // No readable response at all — genuine offline, a timeout, a blocked/interrupted
+    // request, or a CORS-stripped error response. Matches handleNetworkError's intent
+    // below rather than pattern-matching specific codes/messages, so a timeout
+    // (ECONNABORTED) or any other no-response failure is covered too.
+    return !error?.response;
 };
 
 const onFulfilled = (response: AxiosResponse) => {
