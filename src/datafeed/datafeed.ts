@@ -419,8 +419,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             }
 
             // Keep raw quote cache fresh for getQuotes even if this update
-            // cannot be used for synthetic bar emission.
-            this.mergeRawQuote(type, quote);
+            // cannot be used for synthetic bar emission. quotesCache is
+            // checked before latestRawQuotes in getQuotes(), so it must be
+            // kept in sync here too, not just in subscribeQuotes' wsCallback.
+            const merged = this.mergeRawQuote(type, quote);
+            this.quotesCache.set(quote.s, this.buildQuoteOkData(merged));
 
             if (typeof quote.bp !== 'number' || !Number.isFinite(quote.bp)) {
                 return;
