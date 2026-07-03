@@ -145,6 +145,10 @@ export interface QuoteData {
     bs?: number;
     /** Ask size */
     as?: number;
+    /** Bid close - last bid price of the previous trading day. */
+    bc?: number;
+    /** Reset extrema flag - discard cached daily extrema and use only this message's data. */
+    re?: boolean;
     /** Timestamp */
     t?: number;
 }

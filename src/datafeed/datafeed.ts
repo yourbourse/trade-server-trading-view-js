@@ -25,6 +25,7 @@ import type {
 import { SubscriberInfo } from './SubscriberInfo';
 import { TradeServerClient } from '../trade-server-api/TradeServerClient.js';
 import { CandleInterval } from '../schema/public-api/types.gen.js';
+import type { ResponseType } from '../trade-server-api/types/websocket-messages.js';
 import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
@@ -41,6 +42,7 @@ interface RawQuoteState {
     ap?: number;
     bc?: number;
     t?: number;
+    re?: boolean;
 }
 
 class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
@@ -257,6 +259,26 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         return `bars:${subscriberUID}`;
     }
 
+    /**
+     * The server only repeats daily-extrema fields (e.g. `bc`) on a snapshot
+     * or when `re: true` is set — ordinary updates may omit them. Merge onto
+     * the cached state instead of overwriting, so those fields survive
+     * subsequent ticks. On snapshot or `re: true`, replace entirely instead
+     * of merging, per the protocol's reset semantics.
+     */
+    private mergeRawQuote(type: ResponseType | undefined, quote: RawQuoteState): RawQuoteState {
+        const isReset = type === 's' || quote.re === true;
+        const previous = this.latestRawQuotes.get(quote.s);
+
+        const merged: RawQuoteState = isReset ? { ...quote } : { ...previous, ...quote };
+        // `re` is a transient per-message instruction, not persisted state — strip it
+        // so a later ordinary update's merge can't inherit a stale re:true forever.
+        delete merged.re;
+
+        this.latestRawQuotes.set(quote.s, merged);
+        return merged;
+    }
+
     private buildQuoteOkData(quote: RawQuoteState): QuoteOkData {
         const symbol = quote.s;
         const bid = typeof quote.bp === 'number' ? quote.bp : undefined;
@@ -391,14 +413,17 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 return;
             }
 
-            const quote = (data as { quote?: RawQuoteState })?.quote;
+            const { type, quote } = (data as { type?: ResponseType; quote?: RawQuoteState }) ?? {};
             if (!quote) {
                 return;
             }
 
             // Keep raw quote cache fresh for getQuotes even if this update
-            // cannot be used for synthetic bar emission.
-            this.latestRawQuotes.set(quote.s, quote);
+            // cannot be used for synthetic bar emission. quotesCache is
+            // checked before latestRawQuotes in getQuotes(), so it must be
+            // kept in sync here too, not just in subscribeQuotes' wsCallback.
+            const merged = this.mergeRawQuote(type, quote);
+            this.quotesCache.set(quote.s, this.buildQuoteOkData(merged));
 
             if (typeof quote.bp !== 'number' || !Number.isFinite(quote.bp)) {
                 return;
@@ -595,14 +620,13 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const wsCallback = (data: any) => {
-            const { quote } = data;
+            const { type, quote } = data ?? {};
             if (!quote || !dedupedSymbols.includes(quote.s)) {
                 return;
             }
 
-            this.latestRawQuotes.set(quote.s, quote);
-
-            const quoteData = this.buildQuoteOkData(quote);
+            const merged = this.mergeRawQuote(type, quote);
+            const quoteData = this.buildQuoteOkData(merged);
 
             this.quotesCache.set(quote.s, quoteData);
             onRealtimeCallback([quoteData]);
@@ -624,6 +648,25 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         dedupedSymbols.forEach((symbol) => {
             this.acquireL1(symbol, listenerGUID);
         });
+
+        // Defense-in-depth: if a symbol is already known (e.g. another widget's
+        // subscription already consumed its snapshot), hand this listener a value
+        // immediately instead of making it wait for the next organic tick — which
+        // acquireL1's dedupe means may not come from a fresh wire snapshot at all.
+        // Check quotesCache first: getQuotes()'s REST fallback populates it without
+        // ever touching latestRawQuotes, so a symbol can be "known" there only.
+        const replayData = dedupedSymbols
+            .map((symbol) => {
+                const cached = this.quotesCache.get(symbol);
+                if (cached) return cached;
+                const raw = this.latestRawQuotes.get(symbol);
+                return raw ? this.buildQuoteOkData(raw) : undefined;
+            })
+            .filter((data): data is QuoteOkData => data !== undefined);
+
+        if (replayData.length > 0) {
+            onRealtimeCallback(replayData);
+        }
 
         logger.info(`Subscribed to quotes for ${dedupedSymbols.length} symbols`);
     }
@@ -701,6 +744,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         if (set.size > 0) return;
         this.l1Listeners.delete(symbol);
         this.latestRawQuotes.delete(symbol);
+        this.quotesCache.delete(symbol);
         if (!this.api.isConnected()) return;
         this.api
             .unsubscribeFromQuotes(symbol)
@@ -733,6 +777,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         // Local view must match the server's now-empty view.
         this.l1Listeners.clear();
         this.latestRawQuotes.clear();
+        this.quotesCache.clear();
 
         // Replay L1 per-listener; acquireL1 re-derives the wire-call set.
         for (const [listenerGUID, sub] of this.quoteSubscriptions) {
