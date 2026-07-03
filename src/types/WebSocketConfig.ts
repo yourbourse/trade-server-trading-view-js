@@ -13,6 +13,5 @@ export interface WebSocketConfig {
     reconnect: {
         enabled: boolean;
         delay: number;
-        maxAttempts: number;
     };
 }

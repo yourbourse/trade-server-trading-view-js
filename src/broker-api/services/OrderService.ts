@@ -2,7 +2,7 @@ import { Order, PlaceOrderResult, Position, PreOrder } from '../../../charting_l
 import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
-import { handleApiError } from '@/utils/apiError';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side, OrderType, OrderStatus, ParentType, isStopBracketOrderType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -319,7 +319,7 @@ export class OrderService {
                 orderParams.tp = preOrder.takeProfit;
             }
 
-            const result: TradeServerOrder = await this.api.trading.placeOrder(orderParams);
+            const result: TradeServerOrder | undefined = await this.api.trading.placeOrder(orderParams);
 
             if (!result || !result.id) {
                 throw new Error('Order placement failed');
@@ -334,7 +334,11 @@ export class OrderService {
                 orderId: result.id.toString(),
             };
         } catch (error) {
-            handleApiError(error, 'Error placing order');
+            handleMutationError(error, {
+                logContext: 'Error placing order',
+                notifyTitle: 'Order may not have been placed',
+                throwFallback: 'Order placement failed',
+            });
         }
     }
 
@@ -366,7 +370,11 @@ export class OrderService {
 
             logger.info('Order modified successfully:', order.id);
         } catch (error) {
-            handleApiError(error, 'Error modifying order');
+            handleMutationError(error, {
+                logContext: 'Error modifying order',
+                notifyTitle: 'Order may not have been modified',
+                throwFallback: 'Order modification failed',
+            });
         }
     }
 
@@ -377,7 +385,11 @@ export class OrderService {
             await this.api.trading.cancelOrder(parseInt(orderId));
             logger.info('Order canceled successfully:', orderId);
         } catch (error) {
-            handleApiError(error, 'Error canceling order');
+            handleMutationError(error, {
+                logContext: 'Error canceling order',
+                notifyTitle: 'Order may not have been canceled',
+                throwFallback: 'Order cancellation failed',
+            });
         }
     }
 

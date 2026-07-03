@@ -2,7 +2,7 @@ import { Position } from '../../../charting_library/charting_library';
 import type { Position as TradeServerPosition, PositionsCollection, PlaceOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { transformPositions } from '../type-mappings';
-import { handleApiError } from '@/utils/apiError';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -43,7 +43,7 @@ export class PositionService {
 
             logger.debug('Cache empty, fetching from server');
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             this.cachedPositions = transformPositions(positions) as Position[];
             logger.info('Fetched', this.cachedPositions.length, 'positions from server');
             return this.cachedPositions;
@@ -60,7 +60,7 @@ export class PositionService {
 
         try {
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             const serverPosition = positions.find((p: TradeServerPosition) => p.id.toString() === positionId);
 
             if (!serverPosition) {
@@ -122,7 +122,11 @@ export class PositionService {
 
             logger.info('Position brackets modified successfully:', positionId);
         } catch (error) {
-            handleApiError(error, 'Error modifying position brackets');
+            handleMutationError(error, {
+                logContext: 'Error modifying position brackets',
+                notifyTitle: 'Bracket update may not have gone through',
+                throwFallback: 'Position modification failed',
+            });
         }
     }
 
@@ -150,7 +154,11 @@ export class PositionService {
 
             await this.api.trading.placeOrder(closeOrder);
         } catch (error) {
-            handleApiError(error, 'Error closing position');
+            handleMutationError(error, {
+                logContext: 'Error closing position',
+                notifyTitle: 'Position may not have been closed',
+                throwFallback: 'Position close failed',
+            });
         }
     }
 
@@ -204,7 +212,7 @@ export class PositionService {
 
         try {
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             const position = positions.find((p: TradeServerPosition) => p.id.toString() === positionId);
 
             if (!position) {
@@ -224,7 +232,11 @@ export class PositionService {
 
             await this.api.trading.placeOrder(reverseOrder);
         } catch (error) {
-            handleApiError(error, 'Error reversing position');
+            handleMutationError(error, {
+                logContext: 'Error reversing position',
+                notifyTitle: 'Position may not have been reversed',
+                throwFallback: 'Position reverse failed',
+            });
         }
     }
 }

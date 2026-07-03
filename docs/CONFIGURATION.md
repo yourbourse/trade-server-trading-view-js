@@ -22,7 +22,7 @@ import { deriveServerUrls } from '@/utils/serverUrl';
 const { baseUrl, wsUrl } = deriveServerUrls(CONFIG.tradeServer.server);
 console.log(baseUrl);
 console.log(CONFIG.tradingView.theme);
-console.log(CONFIG.websocket.reconnect.maxAttempts);
+console.log(CONFIG.websocket.reconnect.delay);
 ```
 
 ---
@@ -180,18 +180,16 @@ Automatic WebSocket reconnection settings:
 ```typescript
 reconnect: {
   enabled: boolean;   // Enable auto-reconnect
-  delay: number;      // Base delay in milliseconds
-  maxAttempts: number; // Maximum retry attempts
+  delay: number;      // Fixed delay between attempts, in milliseconds
 }
 ```
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `enabled` | `true` | Whether to auto-reconnect on disconnect |
-| `delay` | `5000` | Initial reconnect delay (5 seconds) |
-| `maxAttempts` | `10` | Max reconnect attempts before giving up |
+| `delay` | `2000` | Delay between reconnect attempts (2 seconds) |
 
-The reconnection uses **exponential backoff**: delay doubles on each attempt, capped at `5 × delay` (25 seconds by default).
+Reconnection retries indefinitely at a fixed delay — there is no backoff and no maximum attempt count.
 
 ---
 
@@ -291,8 +289,7 @@ const CONFIG: AppConfig = {
     },
     reconnect: {
       enabled: true,
-      delay: 5000,
-      maxAttempts: 10
+      delay: 2000
     }
   }
 };

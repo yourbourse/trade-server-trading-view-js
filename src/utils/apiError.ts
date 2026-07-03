@@ -49,3 +49,27 @@ export function handleApiError(error: unknown, context: string): never {
     notificationService.error('Request failed', errorMessage);
     throw new Error(errorMessage);
 }
+
+/**
+ * Handles mutation (write) errors uniformly: a distinct `notifyTitle` per
+ * call site gives each operation its own notification dedup key, so two
+ * different failed mutations within the dedup window both surface instead
+ * of the second being suppressed as a "duplicate" of the first.
+ *
+ * @throws Always throws an Error with the extracted message (or `throwFallback`)
+ */
+export function handleMutationError(
+    error: unknown,
+    opts: { logContext: string; notifyTitle: string; throwFallback: string }
+): never {
+    const status = getErrorStatus(error);
+    // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
+    // mutation-specific toast here too would double up with the probe's own
+    // "Reconnected" notice for what's the same underlying stale-session event.
+    if (status !== undefined && status >= 500 && status !== 502) {
+        notificationService.error(opts.notifyTitle, 'Check your orders before retrying');
+    }
+    const msg = extractErrorMessage(error);
+    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`);
+    throw new Error(msg || opts.throwFallback);
+}

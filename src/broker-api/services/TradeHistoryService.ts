@@ -77,10 +77,10 @@ export class TradeHistoryService {
         try {
             logger.debug('Fetching trade history page', nextToken ? '(next page)' : '(first page)');
             const result = await this.api.trading.getTradeHistory(TRADE_HISTORY_FILTER, nextToken);
-            const trades = result.trades || [];
+            const trades = result?.trades || [];
             const rows = transformTradeHistory(trades);
 
-            this.nextPageToken = result.nextToken ?? null;
+            this.nextPageToken = result?.nextToken ?? null;
             logger.info('Trade history page loaded:', rows.length, 'trades', {
                 hasNextPage: Boolean(this.nextPageToken),
             });

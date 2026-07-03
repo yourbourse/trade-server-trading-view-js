@@ -222,6 +222,10 @@ export class MarketDataService {
             sortOrder: 'desc' as const,
         };
 
-        return await executeAuthenticatedRequest(this.user, getTrades, body);
+        const result = await executeAuthenticatedRequest<TradeCollection>(this.user, getTrades, body);
+        if (!result) {
+            throw new Error(`Failed to fetch recent trades for ${symbol}`);
+        }
+        return result;
     }
 }
