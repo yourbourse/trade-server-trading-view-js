@@ -4,6 +4,7 @@ import { createLogger } from '@/utils/logger.js';
 const logger = createLogger({ prefix: '[CurrencyConversionService]' });
 
 const CACHE_TTL_MS = 60_000;
+const FAILURE_CACHE_TTL_MS = 10_000;
 
 interface CacheEntry {
     rate: number;
@@ -11,15 +12,10 @@ interface CacheEntry {
 }
 
 /**
- * Resolves profit-currency -> account-currency conversion rates.
+ * Resolves profit-currency -> account-currency conversion rates for pipValue.
  *
- * TradingView requires `InstrumentInfo.pipValue` to be expressed in the account
- * currency. (`bigPointValue` is intentionally left in the contract/profit currency
- * per TradingView’s spec.)
- * account), the raw tick value from the symbol config is in the profit
- * currency and must be converted before being handed to TradingView -
- * otherwise chart bracket (SL/TP) "Amount" badges show the unconverted
- * profit-currency figure labeled with the account currency.
+ * TradingView InstrumentInfo requires pipValue in account currency; bigPointValue
+ * must remain in contract currency (it drives "Total Value (symbol currency)").
  */
 export class CurrencyConversionService {
     private api: TradeServerClient;
@@ -40,6 +36,8 @@ export class CurrencyConversionService {
             return 1;
         }
 
+        // Key includes both currencies; a mid-session account-currency change
+        // (via WebSocket) passes a new `to` and misses the old cache entry.
         const key = `${from}:${to}`;
         const cached = this.cache.get(key);
         if (cached) {
@@ -59,6 +57,8 @@ export class CurrencyConversionService {
             })
             .catch((error) => {
                 logger.error(`Failed to fetch conversion rate ${from}->${to}, falling back to 1:`, error);
+                // Short negative cache: throttle retries without persisting a wrong rate long-term.
+                this.cache.set(key, { rate: 1, expiresAt: Date.now() + FAILURE_CACHE_TTL_MS });
                 return 1;
             })
             .finally(() => {

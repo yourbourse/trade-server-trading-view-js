@@ -94,7 +94,6 @@ export class BrokerApi extends AbstractBrokerMinimal {
             onRefreshOrdersCache: () => this.orderService.refreshCachedOrders(),
         });
 
-        this.accountService.initializeAccountData();
         this.updateService.subscribeToUpdates();
     }
 
@@ -137,12 +136,12 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // because it multiplies pipValue × qty × lotSize internally.
         const rawPipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
 
-        // TradingView requires pipValue in the *account* currency (see InstrumentInfo.pipValue docs).
-        // When the profit currency differs from the account currency (e.g. AUDCAD position on a USD account),
-        // convert - otherwise chart bracket (SL/TP) "Amount" badges show the unconverted
-        // profit-currency figure mislabeled with the account currency.
-        // Note: bigPointValue is intentionally left unconverted (see below).
+        // TradingView InstrumentInfo spec:
+        // - pipValue: account currency (used for bracket P&L / Order Ticket)
+        // - bigPointValue: contract currency (used for "Total Value (symbol currency)")
+        // When profit currency differs from account currency, convert pipValue only.
         const profitCurrency = symbolConfig.p;
+        await this.accountService.ensureAccountDataLoaded();
         const accountCurrency = this.accountService.getAccountCurrency();
         const accountCurrencyRate = await this.currencyConversionService.getRate(profitCurrency, accountCurrency);
 
@@ -195,9 +194,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
             currency: symbolConfig.p,
             baseCurrency: symbolConfig.b,
             quoteCurrency: symbolConfig.p,
-            // Note: unlike pipValue, bigPointValue is expected in the *contract*
-            // (profit) currency - it drives "Total Value (symbol currency)" - so
-            // it is intentionally left unconverted.
+            // bigPointValue stays in contract/profit currency per InstrumentInfo spec
+            // ("Total Value (symbol currency)" in the Order Ticket).
             bigPointValue: symbolConfig.tv ? symbolConfig.tv / mintick / lotSize : undefined,
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
             ...(allowedDurations.length > 0 && { allowedDurations }),
