@@ -13,9 +13,9 @@ interface CacheEntry {
 /**
  * Resolves profit-currency -> account-currency conversion rates.
  *
- * TradingView requires `InstrumentInfo.pipValue` (and `bigPointValue`) to be
- * expressed in the account currency. For instruments whose profit currency
- * differs from the account currency (e.g. an AUDCAD position on a USD
+ * TradingView requires `InstrumentInfo.pipValue` to be expressed in the account
+ * currency. (`bigPointValue` is intentionally left in the contract/profit currency
+ * per TradingView’s spec.)
  * account), the raw tick value from the symbol config is in the profit
  * currency and must be converted before being handed to TradingView -
  * otherwise chart bracket (SL/TP) "Amount" badges show the unconverted
@@ -42,8 +42,9 @@ export class CurrencyConversionService {
 
         const key = `${from}:${to}`;
         const cached = this.cache.get(key);
-        if (cached && cached.expiresAt > Date.now()) {
-            return cached.rate;
+        if (cached) {
+            if (cached.expiresAt > Date.now()) return cached.rate;
+            this.cache.delete(key);
         }
 
         const existingRequest = this.inFlight.get(key);

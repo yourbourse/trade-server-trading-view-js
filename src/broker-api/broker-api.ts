@@ -137,11 +137,11 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // because it multiplies pipValue × qty × lotSize internally.
         const rawPipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
 
-        // TradingView requires pipValue/bigPointValue in the *account* currency
-        // (see InstrumentInfo.pipValue docs). When the profit currency differs
-        // from the account currency (e.g. AUDCAD position on a USD account),
-        // convert - otherwise chart bracket (SL/TP) "Amount" badges show the
-        // unconverted profit-currency figure mislabeled with the account currency.
+        // TradingView requires pipValue in the *account* currency (see InstrumentInfo.pipValue docs).
+        // When the profit currency differs from the account currency (e.g. AUDCAD position on a USD account),
+        // convert - otherwise chart bracket (SL/TP) "Amount" badges show the unconverted
+        // profit-currency figure mislabeled with the account currency.
+        // Note: bigPointValue is intentionally left unconverted (see below).
         const profitCurrency = symbolConfig.p;
         const accountCurrency = this.accountService.getAccountCurrency();
         const accountCurrencyRate = await this.currencyConversionService.getRate(profitCurrency, accountCurrency);
