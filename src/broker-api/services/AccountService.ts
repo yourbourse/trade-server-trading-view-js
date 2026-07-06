@@ -182,6 +182,10 @@ export class AccountService {
         return this.equityWatchedValue.value();
     }
 
+    getAccountCurrency(): string {
+        return this.currencyWatchedValue.value();
+    }
+
     recalculateAMData(positions: unknown[]): void {
         let totalPl = 0;
         positions.forEach((position: any) => {
@@ -389,6 +393,7 @@ export class AccountService {
             {
                 id: CONFIG.tradeServer.user.login.toString() as AccountId,
                 name: CONFIG.tradeServer.user.login.toString(),
+                currency: this.getAccountCurrency(),
             },
         ];
     }

@@ -30,6 +30,7 @@ import {
     TradeHistoryService,
     AccountService,
     UpdateService,
+    CurrencyConversionService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
 
@@ -59,6 +60,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private updateService: UpdateService;
+    private currencyConversionService: CurrencyConversionService;
 
     public constructor(
         tradeServerClient: TradeServerClient,
@@ -77,6 +79,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
         this.positionService = new PositionService(this.api);
         this.tradeHistoryService = new TradeHistoryService(this.api);
         this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
+        this.currencyConversionService = new CurrencyConversionService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),
             onGetCachedPositions: () => this.positionService.getCachedPositions(),
@@ -125,13 +128,25 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const pipSize = mintick;
 
-        // tv = monetary value of 1 tick move per lot. Divide by lotSize to get per-unit value.
+        // tv = monetary value of 1 tick move per lot, expressed in the symbol's
+        // *profit* currency (symbolConfig.p). Divide by lotSize to get per-unit value.
         const lotSize = symbolConfig.l;
         // Fallback follows TradingView's formula: pipSize * pointValue * accountCurrencyRate
         // with pointValue=1, accountCurrencyRate=1 → pipValue = pipSize = mintick.
         // Using 1 as fallback causes TradingView to display astronomical P&L on brackets
         // because it multiplies pipValue × qty × lotSize internally.
-        const pipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
+        const rawPipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
+
+        // TradingView requires pipValue/bigPointValue in the *account* currency
+        // (see InstrumentInfo.pipValue docs). When the profit currency differs
+        // from the account currency (e.g. AUDCAD position on a USD account),
+        // convert - otherwise chart bracket (SL/TP) "Amount" badges show the
+        // unconverted profit-currency figure mislabeled with the account currency.
+        const profitCurrency = symbolConfig.p;
+        const accountCurrency = this.accountService.getAccountCurrency();
+        const accountCurrencyRate = await this.currencyConversionService.getRate(profitCurrency, accountCurrency);
+
+        const pipValue = rawPipValue * accountCurrencyRate;
 
         const allowedOrderTypes: OrderType[] = [];
         if (symbolConfig.M) {
@@ -180,6 +195,9 @@ export class BrokerApi extends AbstractBrokerMinimal {
             currency: symbolConfig.p,
             baseCurrency: symbolConfig.b,
             quoteCurrency: symbolConfig.p,
+            // Note: unlike pipValue, bigPointValue is expected in the *contract*
+            // (profit) currency - it drives "Total Value (symbol currency)" - so
+            // it is intentionally left unconverted.
             bigPointValue: symbolConfig.tv ? symbolConfig.tv / mintick / lotSize : undefined,
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
             ...(allowedDurations.length > 0 && { allowedDurations }),
