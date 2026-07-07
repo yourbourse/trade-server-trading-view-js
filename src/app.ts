@@ -22,7 +22,7 @@ import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
 import { BrokerApi } from './broker-api/broker-api.js';
 import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
-import { displayVersion } from './utils/version.js';
+import { displayVersion, logLibraryVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
 import { OrderType } from './broker-api/types.js';
 import { initConnectionIndicator } from './ui/connectionIndicator.js';
@@ -61,6 +61,7 @@ function redirectToSignIn(): void {
  * Initialize UI components (logout button, user info)
  */
 async function initUI(): Promise<void> {
+    logLibraryVersion();
     await displayVersion('app-version');
 
     // Wire up logout button

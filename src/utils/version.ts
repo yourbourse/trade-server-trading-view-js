@@ -6,6 +6,12 @@ import { createLogger } from './logger.js';
 
 const logger = createLogger({ prefix: '[Version]' });
 
+export function logLibraryVersion(): void {
+    console.log('================================');
+    console.log(`Library version: ${__LIB_VERSION__}`);
+    console.log('================================');
+}
+
 export function displayVersion(elementId: string): void {
     const element = document.getElementById(elementId);
     if (!element) {
