@@ -150,7 +150,7 @@ export class UpdateService {
                     // `s` (symbol) is required on the full "Position" schema and never present on
                     // "PositionPriceUpdate" (id/mp/pl/m only, additionalProperties: false) — its absence
                     // is the only reliable discriminator between the two message shapes.
-                    if (pos.s === undefined) {
+                    if (!('s' in pos)) {
                         this.applyPositionPriceTick(pos, cachedPositions, positionsToNotify);
                     } else if (this.applyFullPositionUpdate(pos, cachedPositions, positionsToNotify)) {
                         hasClosedPositions = true;
