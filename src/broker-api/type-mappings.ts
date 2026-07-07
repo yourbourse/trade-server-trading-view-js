@@ -279,8 +279,8 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
  * @param positions - Array of Trade Server positions
  * @returns Array of TradingView Position objects
  */
-export function transformPositions(positions: TradeServerPosition[]): Position[] {
-    return positions.map((position) => ({
+export function transformPosition(position: TradeServerPosition): Position {
+    return {
         id: position.id.toString(),
         symbol: position.s,
         brokerSymbol: position.s,
@@ -295,7 +295,11 @@ export function transformPositions(positions: TradeServerPosition[]): Position[]
         ...(position.sl !== undefined && { stopLoss: position.sl }),
         ...(position.tp !== undefined && { takeProfit: position.tp }),
         time: formatTimestamp(position.C),
-    }));
+    };
+}
+
+export function transformPositions(positions: TradeServerPosition[]): Position[] {
+    return positions.map(transformPosition);
 }
 
 /**

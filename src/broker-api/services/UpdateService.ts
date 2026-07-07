@@ -1,7 +1,7 @@
 import { IBrokerConnectionAdapterHost, Order, Position } from '../../../charting_library/charting_library';
 import type { Order as TradeServerOrder, Position as TradeServerPosition, AccountState } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
-import { enrichPositionBracketOrders, transformOrders, transformPositions } from '../type-mappings';
+import { enrichPositionBracketOrders, transformOrders, transformPosition, transformPositions } from '../type-mappings';
 import { OrderStatus } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -151,49 +151,9 @@ export class UpdateService {
                     // "PositionPriceUpdate" (id/mp/pl/m only, additionalProperties: false) — its absence
                     // is the only reliable discriminator between the two message shapes.
                     if (pos.s === undefined) {
-                        // Position price update: patch the existing cached position in place, never overwrite it.
-                        const index = cachedPositions.findIndex((p) => p.id === pos.id.toString());
-                        if (index >= 0 && cachedPositions[index]) {
-                            cachedPositions[index]['pl'] = pos.pl;
-                            cachedPositions[index]['mp'] = pos.mp;
-                            cachedPositions[index]['margin'] = pos.m;
-                            const updatedPosition = cachedPositions[index];
-                            if (updatedPosition) {
-                                positionsToNotify.push(updatedPosition);
-                            }
-                        } else {
-                            logger.warn('Position price update for unknown id, dropping:', pos.id);
-                        }
-                    } else {
-                        const transformedPos = (transformPositions([pos]) as Position[])[0];
-                        if (transformedPos) {
-                            const protectedPos = this.onApplyServerPositionUpdate(transformedPos);
-
-                            if (protectedPos.qty === 0) {
-                                hasClosedPositions = true;
-
-                                const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
-                                if (index >= 0) {
-                                    logger.debug('Removing closed position from cache:', protectedPos.id);
-                                    cachedPositions.splice(index, 1);
-                                }
-                            } else {
-                                const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
-                                if (index >= 0) {
-                                    cachedPositions[index] = protectedPos;
-                                    logger.debug('Updated existing position:', protectedPos.id);
-                                } else {
-                                    cachedPositions.push(protectedPos);
-                                    logger.debug('Added new position:', protectedPos.id);
-                                }
-                                positionsToNotify.push(protectedPos);
-
-                                const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
-                                syncedOrders.forEach((order) => {
-                                    this.host?.orderUpdate?.(order);
-                                });
-                            }
-                        }
+                        this.applyPositionPriceTick(pos, cachedPositions, positionsToNotify);
+                    } else if (this.applyFullPositionUpdate(pos, cachedPositions, positionsToNotify)) {
+                        hasClosedPositions = true;
                     }
                 } catch (error) {
                     logger.error('Error processing position update for id', pos.id, error);
@@ -227,6 +187,64 @@ export class UpdateService {
         }
 
         this.onRecalculateAMData();
+    }
+
+    /**
+     * Position price update: patch the existing cached position in place, never create one.
+     * This shape (id/mp/pl/m only) never carries enough (symbol/qty/side) to add a new entry,
+     * so an unknown id is dropped, not added.
+     */
+    private applyPositionPriceTick(
+        pos: TradeServerPosition,
+        cachedPositions: Position[],
+        positionsToNotify: Position[]
+    ): void {
+        const index = cachedPositions.findIndex((p) => p.id === pos.id.toString());
+        const cachedPosition = cachedPositions[index];
+        if (!cachedPosition) {
+            logger.warn('Position price update for unknown id, dropping:', pos.id);
+            return;
+        }
+        cachedPosition['pl'] = pos.pl;
+        cachedPosition['mp'] = pos.mp;
+        cachedPosition['margin'] = pos.m;
+        positionsToNotify.push(cachedPosition);
+    }
+
+    /**
+     * Full position add/update/close message. Returns true if the position closed (qty === 0)
+     * so the caller can trigger a full positions refresh.
+     */
+    private applyFullPositionUpdate(
+        pos: TradeServerPosition,
+        cachedPositions: Position[],
+        positionsToNotify: Position[]
+    ): boolean {
+        const protectedPos = this.onApplyServerPositionUpdate(transformPosition(pos));
+        const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
+
+        if (protectedPos.qty === 0) {
+            if (index >= 0) {
+                logger.debug('Removing closed position from cache:', protectedPos.id);
+                cachedPositions.splice(index, 1);
+            }
+            return true;
+        }
+
+        if (index >= 0) {
+            cachedPositions[index] = protectedPos;
+            logger.debug('Updated existing position:', protectedPos.id);
+        } else {
+            cachedPositions.push(protectedPos);
+            logger.debug('Added new position:', protectedPos.id);
+        }
+        positionsToNotify.push(protectedPos);
+
+        const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
+        syncedOrders.forEach((order) => {
+            this.host?.orderUpdate?.(order);
+        });
+        return false;
     }
 
     private async applyEnrichedOrderSnapshot(orders: TradeServerOrder[]): Promise<void> {
