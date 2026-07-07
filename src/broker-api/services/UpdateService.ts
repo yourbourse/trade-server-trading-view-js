@@ -146,48 +146,57 @@ export class UpdateService {
             logger.debug('Snapshot: replaced all positions, will notify about', newPositions.length);
         } else if (type === 'u') {
             positions.forEach((pos) => {
-                if (pos.mp !== undefined && pos.pl !== undefined && !pos.s) {
-                    const index = cachedPositions.findIndex((p) => p.id === pos.id.toString());
-                    if (index >= 0 && cachedPositions[index]) {
-                        cachedPositions[index]['pl'] = pos.pl;
-                        if (pos.sw !== undefined) {
-                            cachedPositions[index]['swap'] = pos.sw;
-                        }
-                        const updatedPosition = cachedPositions[index];
-                        if (updatedPosition) {
-                            positionsToNotify.push(updatedPosition);
-                        }
-                    }
-                } else {
-                    const transformedPos = (transformPositions([pos]) as Position[])[0];
-                    if (transformedPos) {
-                        const protectedPos = this.onApplyServerPositionUpdate(transformedPos);
-
-                        if (protectedPos.qty === 0) {
-                            hasClosedPositions = true;
-
-                            const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
-                            if (index >= 0) {
-                                logger.debug('Removing closed position from cache:', protectedPos.id);
-                                cachedPositions.splice(index, 1);
+                try {
+                    // `s` (symbol) is required on the full "Position" schema and never present on
+                    // "PositionPriceUpdate" (id/mp/pl/m only, additionalProperties: false) — its absence
+                    // is the only reliable discriminator between the two message shapes.
+                    if (pos.s === undefined) {
+                        // Position price update: patch the existing cached position in place, never overwrite it.
+                        const index = cachedPositions.findIndex((p) => p.id === pos.id.toString());
+                        if (index >= 0 && cachedPositions[index]) {
+                            cachedPositions[index]['pl'] = pos.pl;
+                            cachedPositions[index]['mp'] = pos.mp;
+                            cachedPositions[index]['margin'] = pos.m;
+                            const updatedPosition = cachedPositions[index];
+                            if (updatedPosition) {
+                                positionsToNotify.push(updatedPosition);
                             }
                         } else {
-                            const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
-                            if (index >= 0) {
-                                cachedPositions[index] = protectedPos;
-                                logger.debug('Updated existing position:', protectedPos.id);
-                            } else {
-                                cachedPositions.push(protectedPos);
-                                logger.debug('Added new position:', protectedPos.id);
-                            }
-                            positionsToNotify.push(protectedPos);
+                            logger.warn('Position price update for unknown id, dropping:', pos.id);
+                        }
+                    } else {
+                        const transformedPos = (transformPositions([pos]) as Position[])[0];
+                        if (transformedPos) {
+                            const protectedPos = this.onApplyServerPositionUpdate(transformedPos);
 
-                            const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
-                            syncedOrders.forEach((order) => {
-                                this.host?.orderUpdate?.(order);
-                            });
+                            if (protectedPos.qty === 0) {
+                                hasClosedPositions = true;
+
+                                const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
+                                if (index >= 0) {
+                                    logger.debug('Removing closed position from cache:', protectedPos.id);
+                                    cachedPositions.splice(index, 1);
+                                }
+                            } else {
+                                const index = cachedPositions.findIndex((p) => p.id === protectedPos.id);
+                                if (index >= 0) {
+                                    cachedPositions[index] = protectedPos;
+                                    logger.debug('Updated existing position:', protectedPos.id);
+                                } else {
+                                    cachedPositions.push(protectedPos);
+                                    logger.debug('Added new position:', protectedPos.id);
+                                }
+                                positionsToNotify.push(protectedPos);
+
+                                const syncedOrders = this.onSyncBracketOrdersFromPosition(protectedPos);
+                                syncedOrders.forEach((order) => {
+                                    this.host?.orderUpdate?.(order);
+                                });
+                            }
                         }
                     }
+                } catch (error) {
+                    logger.error('Error processing position update for id', pos.id, error);
                 }
             });
         } else if (type === 'd') {
