@@ -4,8 +4,16 @@
  */
 
 import { CandleInterval } from '../../schema/public-api/types.gen.js';
-import type { Symbol, SymbolCollection, Book, TradeCollection } from '../../schema/public-api/types.gen.js';
-import { getSymbols, getSymbol, getCharts, getDepth, getTob, getTrades } from '../../schema/public-api/sdk.gen.js';
+import type { Symbol, SymbolCollection, Book, TradeCollection, ConversionRate } from '../../schema/public-api/types.gen.js';
+import {
+    getSymbols,
+    getSymbol,
+    getCharts,
+    getDepth,
+    getTob,
+    getTrades,
+    getConversionRateSingle,
+} from '../../schema/public-api/sdk.gen.js';
 import { client } from '../../schema/public-api/client.gen.js';
 import { getGETHeaders, executeAuthenticatedRequest } from '../../utils/api.js';
 import { AuthUser } from '../../types/AuthUser.js';
@@ -174,6 +182,27 @@ export class MarketDataService {
             });
             throw error;
         }
+    }
+
+    /**
+     * Get conversion rate between two currencies (how many units of `to` per 1 unit of `from`)
+     * POST /conversion-rate/single
+     */
+    async getConversionRate(from: string, to: string): Promise<ConversionRate> {
+        this.log.debug(`Fetching conversion rate: ${from} -> ${to}`);
+        const response = await getConversionRateSingle({
+            client,
+            headers: {
+                'X-YB-API-Key': this.user.apiKey,
+            },
+            body: { from, to },
+        });
+
+        if (!response.data) {
+            throw new Error(`Failed to fetch conversion rate for ${from} -> ${to}`);
+        }
+
+        return response.data;
     }
 
     /**
