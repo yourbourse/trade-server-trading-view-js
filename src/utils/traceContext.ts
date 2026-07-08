@@ -103,7 +103,7 @@ export function formatNotificationWithTraceparent(text: string, traceparent?: st
     const message = trimmed.length === 0 ? trimmed : ensureSentenceEnding(trimmed);
 
     // TradingView toast notifications collapse whitespace and ignore newlines.
-    return `${message} Reference: ${formatTraceIdForNotification(traceId)}`;
+    return `${message} Ref: ${formatTraceIdForNotification(traceId)}`;
 }
 
 function ensureSentenceEnding(text: string): string {

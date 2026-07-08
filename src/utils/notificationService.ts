@@ -15,10 +15,17 @@ type ShowNotificationFn = (title: string, text: string, notificationType?: Notif
 
 const DEDUP_WINDOW_MS = 5000;
 
+interface PendingNotification {
+    title: string;
+    text: string;
+    type: NotificationType;
+    traceparent?: string;
+}
+
 class NotificationService {
     private showNotificationFn: ShowNotificationFn | null = null;
     private log = logger.child('NotificationService');
-    private pendingNotifications: Array<{ title: string; text: string; type: NotificationType }> = [];
+    private pendingNotifications: Array<PendingNotification> = [];
     private recentKeys = new Map<string, number>();
 
     /**
@@ -31,8 +38,8 @@ class NotificationService {
         // Send any pending notifications
         if (this.pendingNotifications.length > 0) {
             this.log.debug(`Sending ${this.pendingNotifications.length} pending notifications`);
-            this.pendingNotifications.forEach(({ title, text, type }) => {
-                this.showNotification(title, text, type);
+            this.pendingNotifications.forEach(({ title, text, type, traceparent }) => {
+                this.showNotification(title, text, type, traceparent);
             });
             this.pendingNotifications = [];
         }
@@ -40,8 +47,16 @@ class NotificationService {
 
     /**
      * Show a notification. Identical title+text+type within DEDUP_WINDOW_MS are suppressed.
+     * The optional traceparent is appended to the displayed text but excluded from the
+     * dedup key, so concurrent identical errors (each carrying a distinct per-request
+     * trace) still collapse into a single toast.
      */
-    showNotification(title: string, text: string, type: NotificationType = NotificationType.Error): void {
+    showNotification(
+        title: string,
+        text: string,
+        type: NotificationType = NotificationType.Error,
+        traceparent?: string
+    ): void {
         const key = JSON.stringify([type, title, text]);
         const now = Date.now();
         const last = this.recentKeys.get(key);
@@ -56,7 +71,7 @@ class NotificationService {
             // actually shown) would make initialize()'s flush see it as a "duplicate" of
             // itself and suppress the only delivery.
             this.log.warn('Notification service not initialized, queuing notification');
-            this.pendingNotifications.push({ title, text, type });
+            this.pendingNotifications.push({ title, text, type, traceparent });
             return;
         }
 
@@ -64,7 +79,7 @@ class NotificationService {
         this.recentKeys.set(key, now);
 
         this.log.debug(`Showing ${NotificationType[type]} notification: ${title}`);
-        this.showNotificationFn(title, text, type);
+        this.showNotificationFn(title, formatNotificationWithTraceparent(text, traceparent), type);
     }
 
     /**
@@ -85,7 +100,7 @@ class NotificationService {
      * Show error notification
      */
     error(title: string, text: string, traceparent?: string): void {
-        this.showNotification(title, formatNotificationWithTraceparent(text, traceparent), NotificationType.Error);
+        this.showNotification(title, text, NotificationType.Error, traceparent);
     }
 
     /**
