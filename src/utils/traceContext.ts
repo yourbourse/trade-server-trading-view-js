@@ -4,9 +4,13 @@
  */
 
 import type { InternalAxiosRequestConfig } from 'axios';
+import { getAppVersion } from './version';
 
 export type TracingHeaders = {
     traceparent: string;
+    'X-YB-APP-NAME': string;
+    'X-YB-APP-VERSION': string;
+    'X-YB-Trace-Code': string;
     'X-YB-TA-ID'?: string;
 };
 
@@ -15,6 +19,11 @@ const TRACE_VERSION = '00';
 
 /** Sampled flag — backend stores traceparent for log correlation. */
 const TRACE_FLAGS = '01';
+
+/** Client identifier sent on every Trade Server request. */
+export const APP_NAME = 'YB-TVJS';
+
+const TRACE_CODE_LENGTH = 6;
 
 function randomHex(byteLength: number): string {
     const bytes = new Uint8Array(byteLength);
@@ -33,17 +42,27 @@ export function generateSpanId(): string {
 }
 
 /** W3C traceparent format: 00-{trace_id}-{span_id}-{flags} */
-export function generateTraceparent(): string {
-    return `${TRACE_VERSION}-${generateTraceId()}-${generateSpanId()}-${TRACE_FLAGS}`;
+export function generateTraceparent(traceId: string = generateTraceId(), spanId: string = generateSpanId()): string {
+    return `${TRACE_VERSION}-${traceId}-${spanId}-${TRACE_FLAGS}`;
+}
+
+/** First 6 hex chars of trace_id — used in X-YB-Trace-Code and notifications. */
+export function formatTraceCode(traceId: string): string {
+    return traceId.slice(0, TRACE_CODE_LENGTH);
 }
 
 /**
- * Fresh traceparent for one outbound request (new trace_id and span_id per call).
- *  X-YB-TA-ID is included only when a valid trading account id is known.
+ * Fresh tracing headers for one outbound request (Option 1: new trace_id and
+ * span_id per call). traceparent and X-YB-Trace-Code are derived from the same
+ * trace_id so they always match.
  */
 export function createTracingHeaders(tradingAccountId?: number | null): TracingHeaders {
+    const traceId = generateTraceId();
     const headers: TracingHeaders = {
-        traceparent: generateTraceparent(),
+        traceparent: generateTraceparent(traceId),
+        'X-YB-APP-NAME': APP_NAME,
+        'X-YB-APP-VERSION': getAppVersion(),
+        'X-YB-Trace-Code': formatTraceCode(traceId),
     };
 
     if (tradingAccountId != null && tradingAccountId > 0) {
@@ -53,28 +72,58 @@ export function createTracingHeaders(tradingAccountId?: number | null): TracingH
     return headers;
 }
 
-/** Read traceparent from an outgoing axios request config. */
-export function extractTraceparentFromRequestConfig(
-    config: InternalAxiosRequestConfig | undefined
+function readHeaderFromRequestConfig(
+    config: InternalAxiosRequestConfig | undefined,
+    headerName: string
 ): string | undefined {
     if (!config?.headers) {
         return undefined;
     }
 
     const headers = config.headers;
+    const lowerName = headerName.toLowerCase();
 
     if (typeof (headers as { get?: (name: string) => unknown }).get === 'function') {
-        const value = (headers as { get: (name: string) => unknown }).get('traceparent');
+        const value =
+            (headers as { get: (name: string) => unknown }).get(headerName) ??
+            (headers as { get: (name: string) => unknown }).get(lowerName);
         if (typeof value === 'string' && value.length > 0) {
             return value;
         }
     }
 
-    const raw =
-        (headers as Record<string, unknown>)['traceparent'] ??
-        (headers as Record<string, unknown>)['Traceparent'];
-
+    const record = headers as Record<string, unknown>;
+    const raw = record[headerName] ?? record[lowerName];
     return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+/** Read traceparent from an outgoing axios request config. */
+export function extractTraceparentFromRequestConfig(
+    config: InternalAxiosRequestConfig | undefined
+): string | undefined {
+    return readHeaderFromRequestConfig(config, 'traceparent');
+}
+
+/** Read X-YB-Trace-Code from an outgoing axios request config. */
+export function extractTraceCodeFromRequestConfig(
+    config: InternalAxiosRequestConfig | undefined
+): string | undefined {
+    return readHeaderFromRequestConfig(config, 'X-YB-Trace-Code');
+}
+
+export type RequestTraceReference = {
+    traceparent?: string;
+    traceCode?: string;
+};
+
+/** Read tracing headers sent on a failed outbound request. */
+export function extractRequestTraceReference(
+    config: InternalAxiosRequestConfig | undefined
+): RequestTraceReference {
+    return {
+        traceparent: extractTraceparentFromRequestConfig(config),
+        traceCode: extractTraceCodeFromRequestConfig(config),
+    };
 }
 
 /** Parse trace_id from a W3C traceparent header value. */
@@ -83,31 +132,43 @@ export function extractTraceIdFromTraceparent(traceparent: string): string | und
     return match?.[1]?.toLowerCase();
 }
 
-/** Short trace_id prefix shown in user-facing notifications. */
-export function formatTraceIdForNotification(traceId: string): string {
-    return traceId.slice(0, 6);
-}
+/** Resolve the trace reference for notifications from request headers. */
+export function resolveTraceReference(
+    traceparent?: string,
+    traceCode?: string
+): string | undefined {
+    if (traceCode) {
+        return traceCode;
+    }
 
-/** Append a short trace reference for support / log lookup in TradingView notifications. */
-export function formatNotificationWithTraceparent(text: string, traceparent?: string): string {
     if (!traceparent) {
-        return text;
+        return undefined;
     }
 
     const traceId = extractTraceIdFromTraceparent(traceparent);
-    if (!traceId) {
+    return traceId ? formatTraceCode(traceId) : undefined;
+}
+
+/** Append a short trace reference for support / log lookup in TradingView notifications. */
+export function formatNotificationWithTraceparent(
+    text: string,
+    traceparent?: string,
+    traceCode?: string
+): string {
+    const reference = resolveTraceReference(traceparent, traceCode);
+    if (!reference) {
         return text;
     }
 
     const trimmed = text.trim();
     if (trimmed.length === 0) {
-        return `Ref: ${formatTraceIdForNotification(traceId)}`;
+        return `Ref: ${reference}`;
     }
 
     const message = ensureSentenceEnding(trimmed);
 
     // TradingView toast notifications collapse whitespace and ignore newlines.
-    return `${message} Ref: ${formatTraceIdForNotification(traceId)}`;
+    return `${message} Ref: ${reference}`;
 }
 
 function ensureSentenceEnding(text: string): string {

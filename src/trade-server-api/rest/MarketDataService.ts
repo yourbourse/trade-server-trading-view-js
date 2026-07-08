@@ -8,6 +8,7 @@ import type { Symbol, SymbolCollection, Book, TradeCollection } from '../../sche
 import { getSymbols, getSymbol, getCharts, getDepth, getTob, getTrades } from '../../schema/public-api/sdk.gen.js';
 import { client } from '../../schema/public-api/client.gen.js';
 import { getGETHeaders, executeAuthenticatedRequest } from '../../utils/api.js';
+import type { TracingHeaders } from '../../utils/traceContext.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
 
@@ -35,10 +36,7 @@ export class MarketDataService {
 
         const response = await getSymbol({
             client,
-            headers: headers as {
-                'X-YB-API-Key': string;
-                traceparent: string;
-                'X-YB-TA-ID'?: string;
+            headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
                 'X-YB-Locale'?: 'en';
                 'If-None-Match'?: string;
             },
@@ -83,10 +81,7 @@ export class MarketDataService {
 
         const response = await getSymbols({
             client,
-            headers: headers as {
-                'X-YB-API-Key': string;
-                traceparent: string;
-                'X-YB-TA-ID'?: string;
+            headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
                 'X-YB-NEXT-TOKEN'?: string;
                 'X-YB-Locale'?: 'en';
                 'If-None-Match'?: string;

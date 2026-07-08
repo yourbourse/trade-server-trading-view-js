@@ -2,7 +2,7 @@ import type { ProblemDetails } from '../schema/public-api';
 import type { InternalAxiosRequestConfig } from 'axios';
 import { notificationService } from './notificationService';
 import { createLogger } from './logger.js';
-import { extractTraceparentFromRequestConfig } from './traceContext';
+import { extractRequestTraceReference, type RequestTraceReference } from './traceContext';
 
 const logger = createLogger({ prefix: '[API]' });
 
@@ -15,6 +15,8 @@ export type ApiError = ProblemDetails & {
     status: number;
     /** traceparent sent on the failed request, for log correlation. */
     traceparent?: string;
+    /** X-YB-Trace-Code sent on the failed request. */
+    traceCode?: string;
 };
 
 /**
@@ -38,16 +40,21 @@ export function getErrorStatus(error: unknown): number | undefined {
 }
 
 /**
- * Gets traceparent from a rejected ApiError or raw axios error.
+ * Gets tracing headers from a rejected ApiError or raw axios error.
  */
-export function getTraceparentFromError(error: unknown): string | undefined {
-    const apiError = error as { traceparent?: string; config?: InternalAxiosRequestConfig };
+export function getTraceReferenceFromError(error: unknown): RequestTraceReference {
+    const apiError = error as {
+        traceparent?: string;
+        traceCode?: string;
+        config?: InternalAxiosRequestConfig;
+    };
 
-    if (typeof apiError.traceparent === 'string' && apiError.traceparent.length > 0) {
-        return apiError.traceparent;
-    }
+    const fromConfig = extractRequestTraceReference(apiError.config);
 
-    return extractTraceparentFromRequestConfig(apiError.config);
+    return {
+        traceparent: apiError.traceparent ?? fromConfig.traceparent,
+        traceCode: apiError.traceCode ?? fromConfig.traceCode,
+    };
 }
 
 /**
@@ -61,10 +68,15 @@ export function getTraceparentFromError(error: unknown): string | undefined {
 export function handleApiError(error: unknown, context: string): never {
     const errorMessage = extractErrorMessage(error);
     const statusCode = getErrorStatus(error);
-    const traceparent = getTraceparentFromError(error);
+    const trace = getTraceReferenceFromError(error);
 
-    logger.error(`${context}:`, errorMessage, `(${statusCode || 'unknown'})`, traceparent ?? '');
-    notificationService.error('Request failed', errorMessage, traceparent);
+    logger.error(
+        `${context}:`,
+        errorMessage,
+        `(${statusCode || 'unknown'})`,
+        trace.traceCode ?? trace.traceparent ?? ''
+    );
+    notificationService.error('Request failed', errorMessage, trace);
     throw new Error(errorMessage);
 }
 
@@ -81,14 +93,14 @@ export function handleMutationError(
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
     const status = getErrorStatus(error);
-    const traceparent = getTraceparentFromError(error);
+    const trace = getTraceReferenceFromError(error);
     // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
     // mutation-specific toast here too would double up with the probe's own
     // "Reconnected" notice for what's the same underlying stale-session event.
     if (status !== undefined && status >= 500 && status !== 502) {
-        notificationService.error(opts.notifyTitle, 'Check your orders before retrying', traceparent);
+        notificationService.error(opts.notifyTitle, 'Check your orders before retrying', trace);
     }
     const msg = extractErrorMessage(error);
-    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, traceparent ?? '');
+    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
     throw new Error(msg || opts.throwFallback);
 }
