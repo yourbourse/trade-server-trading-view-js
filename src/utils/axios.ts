@@ -8,6 +8,7 @@ import type { ProblemDetails } from '../schema/public-api';
 import type { SkipUserMessage } from '../types/SkipUserMessage';
 import { logger } from './logger.js';
 import { notificationService } from './notificationService';
+import { extractTraceparentFromRequestConfig } from './traceContext';
 
 import { client as publicAxiosClient } from '../schema/public-api/client.gen';
 
@@ -45,9 +46,12 @@ const getRetryAfterSeconds = (error: AxiosError): number | null => {
 };
 
 const handleNetworkError = (error: AxiosError, problemDetails: ProblemDetails): Promise<ApiError> => {
+    const traceparent = extractTraceparentFromRequestConfig(error.config);
+
     if (shouldIgnoreNetworkErrors(error.config)) {
         return Promise.reject({
             status: getAxiosErrorCode(error.response),
+            traceparent,
             ...problemDetails,
         } as ApiError);
     }
@@ -63,17 +67,20 @@ const handleNetworkError = (error: AxiosError, problemDetails: ProblemDetails): 
         code: error.code,
         message: error.message,
         url: error.config?.url,
+        traceparent,
     });
-    notificationService.error('Connection Lost', 'Please check your connection and try again.');
+    notificationService.error('Connection Lost', 'Please check your connection and try again.', traceparent);
 
     return Promise.reject({
         status: getAxiosErrorCode(error.response),
+        traceparent,
         ...problemDetails,
     } as ApiError);
 };
 
 const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemDetails): Promise<ApiError> => {
     const status = error.response?.status ?? 500;
+    const traceparent = extractTraceparentFromRequestConfig(error.config);
     const ignoredStatusCodes = getIgnoredStatusCodes(error.config);
     const isIgnored = ignoredStatusCodes.includes(status);
 
@@ -91,7 +98,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
 
             case 429: {
                 const wait = retryAfter !== null ? ` Please wait ${retryAfter} seconds.` : ' Please slow down.';
-                notificationService.error('Too Many Requests', `You are sending too many requests.${wait}`);
+                notificationService.error('Too Many Requests', `You are sending too many requests.${wait}`, traceparent);
                 break;
             }
 
@@ -103,7 +110,8 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
                     'Connection Problem',
                     detail && detail !== 'Unknown error'
                         ? detail
-                        : 'The server encountered a problem. Please try again in a moment.'
+                        : 'The server encountered a problem. Please try again in a moment.',
+                    traceparent
                 );
                 break;
             }
@@ -118,7 +126,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
                 const title =
                     problemDetails.title ||
                     (status >= 400 && status < 500 ? `Error ${status}` : 'Server Error');
-                notificationService.error(title, errorMessage);
+                notificationService.error(title, errorMessage, traceparent);
                 break;
             }
         }
@@ -139,6 +147,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
 
     return Promise.reject({
         status: getAxiosErrorCode(error.response),
+        traceparent,
         ...problemDetails,
     } as ApiError);
 };
@@ -155,9 +164,11 @@ const onFulfilled = (response: AxiosResponse) => {
     // The default validateStatus never routes non-2xx here; this branch is dead
     // code retained only for safety in case a custom validateStatus is set.
     if (response.status < 200 || response.status >= 300) {
-        notificationService.error(`Error ${response.status}`, 'Unable to perform operation');
+        const traceparent = extractTraceparentFromRequestConfig(response.config);
+        notificationService.error(`Error ${response.status}`, 'Unable to perform operation', traceparent);
         return Promise.reject({
             status: getAxiosErrorCode(response),
+            traceparent,
             detail: 'Unable to perform operation',
         } as ApiError);
     }

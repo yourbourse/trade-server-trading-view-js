@@ -1,6 +1,8 @@
 import type { ProblemDetails } from '../schema/public-api';
+import type { InternalAxiosRequestConfig } from 'axios';
 import { notificationService } from './notificationService';
 import { createLogger } from './logger.js';
+import { extractTraceparentFromRequestConfig } from './traceContext';
 
 const logger = createLogger({ prefix: '[API]' });
 
@@ -11,6 +13,8 @@ export type ApiError = ProblemDetails & {
     /// <example>400</example>
     /// <example>500</example>
     status: number;
+    /** traceparent sent on the failed request, for log correlation. */
+    traceparent?: string;
 };
 
 /**
@@ -34,6 +38,19 @@ export function getErrorStatus(error: unknown): number | undefined {
 }
 
 /**
+ * Gets traceparent from a rejected ApiError or raw axios error.
+ */
+export function getTraceparentFromError(error: unknown): string | undefined {
+    const apiError = error as { traceparent?: string; config?: InternalAxiosRequestConfig };
+
+    if (typeof apiError.traceparent === 'string' && apiError.traceparent.length > 0) {
+        return apiError.traceparent;
+    }
+
+    return extractTraceparentFromRequestConfig(apiError.config);
+}
+
+/**
  * Handles API errors uniformly across the application
  * Extracts meaningful error message, logs it, shows notification, and re-throws
  *
@@ -44,9 +61,10 @@ export function getErrorStatus(error: unknown): number | undefined {
 export function handleApiError(error: unknown, context: string): never {
     const errorMessage = extractErrorMessage(error);
     const statusCode = getErrorStatus(error);
+    const traceparent = getTraceparentFromError(error);
 
-    logger.error(`${context}:`, errorMessage, `(${statusCode || 'unknown'})`);
-    notificationService.error('Request failed', errorMessage);
+    logger.error(`${context}:`, errorMessage, `(${statusCode || 'unknown'})`, traceparent ?? '');
+    notificationService.error('Request failed', errorMessage, traceparent);
     throw new Error(errorMessage);
 }
 
@@ -63,13 +81,14 @@ export function handleMutationError(
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
     const status = getErrorStatus(error);
+    const traceparent = getTraceparentFromError(error);
     // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
     // mutation-specific toast here too would double up with the probe's own
     // "Reconnected" notice for what's the same underlying stale-session event.
     if (status !== undefined && status >= 500 && status !== 502) {
-        notificationService.error(opts.notifyTitle, 'Check your orders before retrying');
+        notificationService.error(opts.notifyTitle, 'Check your orders before retrying', traceparent);
     }
     const msg = extractErrorMessage(error);
-    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`);
+    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, traceparent ?? '');
     throw new Error(msg || opts.throwFallback);
 }

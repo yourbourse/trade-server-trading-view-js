@@ -4,6 +4,7 @@
  */
 
 import { logger } from './logger.js';
+import { formatNotificationWithTraceparent } from './traceContext';
 
 export enum NotificationType {
     Error = 0,
@@ -83,8 +84,8 @@ class NotificationService {
     /**
      * Show error notification
      */
-    error(title: string, text: string): void {
-        this.showNotification(title, text, NotificationType.Error);
+    error(title: string, text: string, traceparent?: string): void {
+        this.showNotification(title, formatNotificationWithTraceparent(text, traceparent), NotificationType.Error);
     }
 
     /**
