@@ -6,9 +6,19 @@ import { createLogger } from './logger.js';
 
 const logger = createLogger({ prefix: '[Version]' });
 
-/** Build-time app version injected by Vite (`VERSION` env or fallback default). */
+/**
+ * Library version from package.json (injected as __LIB_VERSION__ at build time).
+ * Prefer this over __APP_VERSION__ for request headers — VERSION env is only set
+ * in some deployments and otherwise falls back to 0.0.0.
+ */
 export function getAppVersion(): string {
-    return __APP_VERSION__;
+    return __LIB_VERSION__;
+}
+
+export function logLibraryVersion(): void {
+    console.log('================================');
+    console.log(`Library version: ${__LIB_VERSION__}`);
+    console.log('================================');
 }
 
 export function displayVersion(elementId: string): void {
