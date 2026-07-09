@@ -31,14 +31,24 @@ function randomHex(byteLength: number): string {
     return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** W3C forbids all-zero trace-id and parent-id; regenerate if that edge case occurs. */
+function randomNonZeroHex(byteLength: number): string {
+    const invalid = '0'.repeat(byteLength * 2);
+    let id = randomHex(byteLength);
+    while (id === invalid) {
+        id = randomHex(byteLength);
+    }
+    return id;
+}
+
 /** 16 bytes → 32 lowercase hex chars (W3C trace-id). */
 export function generateTraceId(): string {
-    return randomHex(16);
+    return randomNonZeroHex(16);
 }
 
 /** 8 bytes → 16 lowercase hex chars (W3C parent-id / span-id). */
 export function generateSpanId(): string {
-    return randomHex(8);
+    return randomNonZeroHex(8);
 }
 
 /** W3C traceparent format: 00-{trace_id}-{span_id}-{flags} */

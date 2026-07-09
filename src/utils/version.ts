@@ -6,7 +6,7 @@ import { createLogger } from './logger.js';
 
 const logger = createLogger({ prefix: '[Version]' });
 
-/** Build-time app version injected by Vite (`VERSION` env or package default). */
+/** Build-time app version injected by Vite (`VERSION` env or fallback default). */
 export function getAppVersion(): string {
     return __APP_VERSION__;
 }
