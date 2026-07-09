@@ -83,6 +83,7 @@ npm run dev
 | **TradingView Charting Library** | Commercial license required ([request access](https://www.tradingview.com/HTML5-stock-forex-bitcoin-charting-library/)) |
 | **YourBourse Trade Server** | API access with valid credentials |
 | **Modern Browser** | Chrome, Firefox, Edge, or Safari with WebSocket support |
+| **HTTPS (production)** | Required for credentials and Web Crypto–based request tracing; `localhost` is fine for local development |
 
 ---
 

@@ -5,6 +5,9 @@
 
 import type { InternalAxiosRequestConfig } from 'axios';
 import { getAppVersion } from './version';
+import { createLogger } from './logger.js';
+
+const log = createLogger({ prefix: '[TraceContext]' });
 
 export type TracingHeaders = {
     traceparent: string;
@@ -25,9 +28,42 @@ export const APP_NAME = 'YB-TVJS';
 
 const TRACE_CODE_LENGTH = 6;
 
+let warnedAboutInsecureRandom = false;
+
+/**
+ * Fill a byte buffer with cryptographically strong random values when available.
+ * Falls back to Math.random() outside secure contexts (non-HTTPS) so tracing
+ * headers never break outbound requests. W3C Trace Context allows
+ * pseudo-random generation for trace-id / parent-id.
+ */
+function fillRandomBytes(bytes: Uint8Array): void {
+    try {
+        const cryptoApi = globalThis.crypto;
+        if (cryptoApi && typeof cryptoApi.getRandomValues === 'function') {
+            // TS DOM typings require ArrayBufferView<ArrayBuffer>; Uint8Array is fine at runtime.
+            cryptoApi.getRandomValues(bytes as Parameters<Crypto['getRandomValues']>[0]);
+            return;
+        }
+    } catch {
+        // Secure-context / crypto failures fall through to Math.random().
+    }
+
+    if (!warnedAboutInsecureRandom) {
+        warnedAboutInsecureRandom = true;
+        log.warn(
+            'crypto.getRandomValues unavailable; using Math.random() for trace IDs. ' +
+                'Serve this app over HTTPS (or localhost) in production.'
+        );
+    }
+
+    for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+    }
+}
+
 function randomHex(byteLength: number): string {
     const bytes = new Uint8Array(byteLength);
-    crypto.getRandomValues(bytes);
+    fillRandomBytes(bytes);
     return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
