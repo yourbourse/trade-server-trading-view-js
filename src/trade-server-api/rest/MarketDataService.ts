@@ -16,6 +16,7 @@ import {
 } from '../../schema/public-api/sdk.gen.js';
 import { client } from '../../schema/public-api/client.gen.js';
 import { getGETHeaders, executeAuthenticatedRequest } from '../../utils/api.js';
+import type { TracingHeaders } from '../../utils/traceContext.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
 
@@ -34,7 +35,7 @@ export class MarketDataService {
     async getSymbolInfo(symbol: string, locale: string = 'en', ifNoneMatch: string | null = null): Promise<Symbol> {
         this.log.debug(`Fetching symbol info: ${symbol}`);
         const headers: Record<string, unknown> = {
-            'X-YB-API-Key': this.user.apiKey,
+            ...getGETHeaders(this.user),
             'X-YB-Locale': locale,
         };
         if (ifNoneMatch) {
@@ -43,7 +44,10 @@ export class MarketDataService {
 
         const response = await getSymbol({
             client,
-            headers: headers as { 'X-YB-API-Key': string; 'X-YB-Locale'?: 'en'; 'If-None-Match'?: string },
+            headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
+                'X-YB-Locale'?: 'en';
+                'If-None-Match'?: string;
+            },
             path: {
                 symbolName: symbol,
             },
@@ -68,7 +72,7 @@ export class MarketDataService {
     ): Promise<SymbolCollection> {
         this.log.debug('Fetching symbols');
         const headers: Record<string, unknown> = {
-            'X-YB-API-Key': this.user.apiKey,
+            ...getGETHeaders(this.user),
             'X-YB-Locale': locale,
         };
         if (nextToken) {
@@ -85,8 +89,7 @@ export class MarketDataService {
 
         const response = await getSymbols({
             client,
-            headers: headers as {
-                'X-YB-API-Key': string;
+            headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
                 'X-YB-NEXT-TOKEN'?: string;
                 'X-YB-Locale'?: 'en';
                 'If-None-Match'?: string;
@@ -158,9 +161,7 @@ export class MarketDataService {
         try {
             const response = await getCharts({
                 client,
-                headers: {
-                    'X-YB-API-Key': this.user.apiKey,
-                },
+                headers: getGETHeaders(this.user),
                 body,
             });
 

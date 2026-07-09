@@ -193,6 +193,8 @@ This ensures requests can't be tampered with or replayed. See the [Authenticatio
 
 **Yes** for production use. The sign-in page accepts HTTP URLs for local development, but all production deployments should use HTTPS/WSS to protect credentials in transit.
 
+Request tracing also prefers the Web Crypto API (`crypto.getRandomValues`) to generate W3C `traceparent` IDs. That API is only guaranteed in [secure contexts](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts) (HTTPS or `localhost`). If it is unavailable, the client falls back to `Math.random()` so API calls still succeed — but brokers embedding this library should still serve it over HTTPS.
+
 ---
 
 ## Still have questions?

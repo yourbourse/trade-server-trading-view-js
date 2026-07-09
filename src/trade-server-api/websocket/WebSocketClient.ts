@@ -9,12 +9,15 @@ import { MessageRouter } from './MessageRouter.js';
 import { WebSocketConnectionError, SubscriptionTimeoutError, SubscriptionError } from '../errors/index.js';
 import { logger } from '../../utils/logger.js';
 import { WebSocketCloseCode } from '../constants/WebSocketCloseCodes.js';
+import { createTracingHeaders } from '../../utils/traceContext.js';
 
 export interface WebSocketClientOptions {
     /** WebSocket URL */
     url: string;
     /** API key for authentication */
     apiKey: string;
+    /** Trading account login for X-YB-TA-ID tracing header */
+    tradingAccountId?: number;
     /** Auto-reconnect on disconnect */
     autoReconnect?: boolean;
     /** Fixed delay between reconnect attempts, in milliseconds. Reconnection retries indefinitely. */
@@ -31,9 +34,12 @@ interface PendingRequest {
     timeout?: ReturnType<typeof setTimeout>;
 }
 
+type ResolvedWebSocketClientOptions = Required<Omit<WebSocketClientOptions, 'tradingAccountId'>> &
+    Pick<WebSocketClientOptions, 'tradingAccountId'>;
+
 export class WebSocketClient {
     private ws: WebSocket | null = null;
-    private options: Required<WebSocketClientOptions>;
+    private options: ResolvedWebSocketClientOptions;
     private subscriptions: SubscriptionManager;
     private router: MessageRouter;
     private reqIdCounter = 0;
@@ -81,6 +87,13 @@ export class WebSocketClient {
      */
     setApiKey(apiKey: string): void {
         this.options.apiKey = apiKey;
+    }
+
+    private getMessageHeaders(): Record<string, string> {
+        return {
+            'X-YB-API-Key': this.options.apiKey,
+            ...createTracingHeaders(this.options.tradingAccountId),
+        };
     }
 
     /**
@@ -336,9 +349,7 @@ export class WebSocketClient {
         const reqId = this.generateReqId();
         this.send({
             m: 'ping',
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
     }
@@ -411,9 +422,7 @@ export class WebSocketClient {
             m: 'subscribe',
             c: channel,
             p: params || {},
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
 
@@ -449,9 +458,7 @@ export class WebSocketClient {
             m: 'unsubscribe',
             c: channel,
             p: params || {},
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
 

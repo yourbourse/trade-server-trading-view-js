@@ -1,5 +1,6 @@
 declare global {
     const __APP_VERSION__: string;
+    const __LIB_VERSION__: string;
 
     interface Window {
         __APP_VERSION__: string;
