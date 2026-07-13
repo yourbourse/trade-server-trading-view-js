@@ -140,7 +140,7 @@ export class PositionService {
                 throw new Error('Position not found');
             }
 
-            if (amount !== undefined && (amount <= 0 || amount > position.qty)) {
+            if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0 || amount > position.qty)) {
                 throw new Error(
                     `Invalid close amount ${amount} for position ${positionId} (position size: ${position.qty})`
                 );
