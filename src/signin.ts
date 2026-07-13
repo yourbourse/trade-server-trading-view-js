@@ -8,7 +8,7 @@ import { AuthService } from './trade-server-api/rest/AuthService.js';
 import { AccountService } from './trade-server-api/rest/AccountService.js';
 import { client } from './schema/public-api/client.gen.js';
 import type { AuthUser } from './types/AuthUser.js';
-import { displayVersion } from './utils/version.js';
+import { displayVersion, logLibraryVersion } from './utils/version.js';
 import { deriveServerUrls } from './utils/serverUrl.js';
 import { createLogger } from './utils/logger.js';
 
@@ -317,6 +317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     logger.debug('Current URL:', window.location.href);
     logger.debug('Current pathname:', window.location.pathname);
 
+    logLibraryVersion();
     await displayVersion('app-version');
 
     // Show a note when the user was signed out due to session expiry / revocation.

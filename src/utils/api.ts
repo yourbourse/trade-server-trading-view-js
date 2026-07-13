@@ -2,10 +2,12 @@ import hmacSHA256 from 'crypto-js/hmac-sha256';
 import Base64 from 'crypto-js/enc-base64';
 import { AuthUser } from '../types/AuthUser';
 import { publicAxiosClient as publicClient } from '../utils/axios';
+import { createTracingHeaders, type TracingHeaders } from './traceContext';
 
-function getGETHeaders(user: AuthUser): { 'X-YB-API-Key': string } {
+function getGETHeaders(user: AuthUser): { 'X-YB-API-Key': string } & TracingHeaders {
     return {
         'X-YB-API-Key': user?.apiKey,
+        ...createTracingHeaders(user?.login),
     };
 }
 
@@ -42,6 +44,7 @@ function getPOSTHeadersWithNonce(
     return {
         'X-YB-Nonce': nonce,
         'X-YB-API-Key': user?.apiKey,
+        ...createTracingHeaders(user?.login),
         'X-YB-Sign': getHMACDigest(
             user?.signingToken || user.password!,
             `Content=${JSON.stringify(data)}
@@ -64,6 +67,7 @@ function getPOSTHeadersWithTimestamp(
     return {
         'X-YB-Timestamp': timestampInMicroseconds.toString(),
         'X-YB-API-Key': user?.apiKey,
+        ...createTracingHeaders(user?.login),
         'X-YB-Sign': getHMACDigest(
             user?.signingToken || user.password!,
             `Content=${JSON.stringify(data)}
@@ -98,6 +102,7 @@ function getDELETEHeadersWithTimestamp(user: AuthUser): {
     return {
         'X-YB-Timestamp': timestampInMicroseconds.toString(),
         'X-YB-API-Key': user?.apiKey,
+        ...createTracingHeaders(user?.login),
         'X-YB-Sign': getHMACDigest(
             user?.signingToken || user.password!,
             `Content=
@@ -116,6 +121,7 @@ function getDELETEHeadersWithNonce(user: AuthUser): {
     return {
         'X-YB-Nonce': nonce,
         'X-YB-API-Key': user?.apiKey,
+        ...createTracingHeaders(user?.login),
         'X-YB-Sign': getHMACDigest(
             user?.signingToken || user.password!,
             `Content=
