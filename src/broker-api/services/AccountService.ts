@@ -60,6 +60,8 @@ export class AccountService {
     private accountDetailsChangeDelegate!: IDelegate<(data: {}) => void>;
     private equityUpdateSubscribed = false;
 
+    private readonly accountDataReady: Promise<void>;
+
     private accountProfileData: Array<{ id: string; field: string; value: string }> = [];
     private transferHistoryData: Array<{
         id: string;
@@ -81,9 +83,15 @@ export class AccountService {
         this.creditWatchedValue = this.host.factory.createWatchedValue(0);
         this.currencyWatchedValue = this.host.factory.createWatchedValue('USD');
         this.collateralWatchedValue = this.host.factory.createWatchedValue(0);
+
+        this.accountDataReady = this.loadInitialAccountData();
     }
 
-    async initializeAccountData(): Promise<void> {
+    ensureAccountDataLoaded(): Promise<void> {
+        return this.accountDataReady;
+    }
+
+    private async loadInitialAccountData(): Promise<void> {
         try {
             logger.info('Fetching initial account data...');
 
@@ -180,6 +188,10 @@ export class AccountService {
 
     getEquity(): number {
         return this.equityWatchedValue.value();
+    }
+
+    getAccountCurrency(): string {
+        return this.currencyWatchedValue.value();
     }
 
     recalculateAMData(positions: unknown[]): void {
@@ -385,10 +397,13 @@ export class AccountService {
     }
 
     async getAccountsMetainfo(): Promise<AccountMetainfo[]> {
+        await this.ensureAccountDataLoaded();
+
         return [
             {
                 id: CONFIG.tradeServer.user.login.toString() as AccountId,
                 name: CONFIG.tradeServer.user.login.toString(),
+                currency: this.getAccountCurrency(),
             },
         ];
     }

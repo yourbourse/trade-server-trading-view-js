@@ -66,7 +66,7 @@ export default defineConfig(({ mode }) => {
     publicDir: 'public',
     define: {
       __APP_VERSION__: JSON.stringify(version),
-      __LIB_VERSION__: JSON.stringify(libVersion)
+      __LIB_VERSION__: JSON.stringify(libVersion),
     },
     resolve: {
       alias: {

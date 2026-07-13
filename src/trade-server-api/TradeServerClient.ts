@@ -139,6 +139,7 @@ export class TradeServerClient {
         this.wsClient = new WebSocketClient({
             url: wsUrl,
             apiKey: this.user.apiKey,
+            tradingAccountId: this.user.login,
             autoReconnect: this.config.websocket.reconnect?.enabled ?? true,
             reconnectDelay: this.config.websocket.reconnect?.delay ?? 2000,
             // 10s (vs the lib's 30s default): a revoked session is only detected

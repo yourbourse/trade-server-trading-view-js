@@ -4,6 +4,7 @@
  */
 
 import { logger } from './logger.js';
+import { formatNotificationWithTraceparent, type RequestTraceReference } from './traceContext';
 
 export enum NotificationType {
     Error = 0,
@@ -14,10 +15,17 @@ type ShowNotificationFn = (title: string, text: string, notificationType?: Notif
 
 const DEDUP_WINDOW_MS = 5000;
 
+interface PendingNotification {
+    title: string;
+    text: string;
+    type: NotificationType;
+    trace?: RequestTraceReference;
+}
+
 class NotificationService {
     private showNotificationFn: ShowNotificationFn | null = null;
     private log = logger.child('NotificationService');
-    private pendingNotifications: Array<{ title: string; text: string; type: NotificationType }> = [];
+    private pendingNotifications: Array<PendingNotification> = [];
     private recentKeys = new Map<string, number>();
 
     /**
@@ -30,8 +38,8 @@ class NotificationService {
         // Send any pending notifications
         if (this.pendingNotifications.length > 0) {
             this.log.debug(`Sending ${this.pendingNotifications.length} pending notifications`);
-            this.pendingNotifications.forEach(({ title, text, type }) => {
-                this.showNotification(title, text, type);
+            this.pendingNotifications.forEach(({ title, text, type, trace }) => {
+                this.showNotification(title, text, type, trace);
             });
             this.pendingNotifications = [];
         }
@@ -39,8 +47,15 @@ class NotificationService {
 
     /**
      * Show a notification. Identical title+text+type within DEDUP_WINDOW_MS are suppressed.
+     * Trace reference fields are appended to the displayed text but excluded from the dedup
+     * key, so concurrent identical errors still collapse into a single toast.
      */
-    showNotification(title: string, text: string, type: NotificationType = NotificationType.Error): void {
+    showNotification(
+        title: string,
+        text: string,
+        type: NotificationType = NotificationType.Error,
+        trace?: RequestTraceReference
+    ): void {
         const key = JSON.stringify([type, title, text]);
         const now = Date.now();
         const last = this.recentKeys.get(key);
@@ -55,7 +70,7 @@ class NotificationService {
             // actually shown) would make initialize()'s flush see it as a "duplicate" of
             // itself and suppress the only delivery.
             this.log.warn('Notification service not initialized, queuing notification');
-            this.pendingNotifications.push({ title, text, type });
+            this.pendingNotifications.push({ title, text, type, trace });
             return;
         }
 
@@ -63,7 +78,11 @@ class NotificationService {
         this.recentKeys.set(key, now);
 
         this.log.debug(`Showing ${NotificationType[type]} notification: ${title}`);
-        this.showNotificationFn(title, text, type);
+        this.showNotificationFn(
+            title,
+            formatNotificationWithTraceparent(text, trace?.traceparent, trace?.traceCode),
+            type
+        );
     }
 
     /**
@@ -83,8 +102,8 @@ class NotificationService {
     /**
      * Show error notification
      */
-    error(title: string, text: string): void {
-        this.showNotification(title, text, NotificationType.Error);
+    error(title: string, text: string, trace?: RequestTraceReference): void {
+        this.showNotification(title, text, NotificationType.Error, trace);
     }
 
     /**
