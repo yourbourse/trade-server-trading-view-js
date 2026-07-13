@@ -130,9 +130,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                         symbol: symbol.n,
                         full_name: symbol.n,
                         description: symbol.d,
-                        //TODO: these 2 below field should be got from public api in the future
-                        exchange: '',
-                        type: '',
+                        exchange: symbol.ex ?? '',
+                        type: symbol.it ?? '',
                     }));
 
                 onResultReadyCallback(filteredSymbols);
