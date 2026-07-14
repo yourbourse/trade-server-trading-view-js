@@ -94,13 +94,23 @@ export function handleMutationError(
 ): never {
     const status = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
-    // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
-    // mutation-specific toast here too would double up with the probe's own
-    // "Reconnected" notice for what's the same underlying stale-session event.
-    if (status !== undefined && status >= 500 && status !== 502) {
-        notificationService.error(opts.notifyTitle, 'Check your orders before retrying', trace);
-    }
     const msg = extractErrorMessage(error);
     logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
+
+    if (status === undefined) {
+        // Non-HTTP error (e.g. a logic-level throw before/without an HTTP response).
+        // The Axios interceptor did not fire, so we must notify here to avoid a silent
+        // failure — show the actual error message rather than a generic fallback.
+        notificationService.error(opts.notifyTitle, msg || opts.throwFallback, trace);
+    } else if (status >= 500 && status !== 502) {
+        // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
+        // mutation-specific toast would double up with the probe's own "Reconnected"
+        // notice for what's the same underlying stale-session event.
+        // Other 5xx: state is uncertain, show a generic "check your orders" message.
+        notificationService.error(opts.notifyTitle, 'Check your orders before retrying', trace);
+    }
+    // 4xx (400, 422, …) and 401/403/502 are already handled by the Axios interceptor —
+    // no second toast needed here.
+
     throw new Error(msg || opts.throwFallback);
 }
