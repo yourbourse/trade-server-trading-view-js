@@ -22,13 +22,13 @@ export type ApiError = ProblemDetails & {
 /**
  * Extracts a human-readable error message from API error or ProblemDetails
  * This is the core message extraction logic used by axios interceptor and error handlers
- * Priority: detail > title > message > description > 'Unknown error'
+ * Priority: detail > title > message > description
  */
-export function extractErrorMessage(error: unknown): string {
+export function extractErrorMessage(error: unknown): string | undefined {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const errorData = error as any;
 
-    return errorData?.detail || errorData?.title || errorData?.message || errorData?.description || 'Unknown error';
+    return errorData?.detail || errorData?.title || errorData?.message || errorData?.description;
 }
 
 /**
@@ -66,7 +66,7 @@ export function getTraceReferenceFromError(error: unknown): RequestTraceReferenc
  * @throws Always throws an Error with the extracted message
  */
 export function handleApiError(error: unknown, context: string): never {
-    const errorMessage = extractErrorMessage(error);
+    const errorMessage = extractErrorMessage(error) ?? 'Unknown error';
     const statusCode = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
 
@@ -92,11 +92,20 @@ export function handleMutationError(
     error: unknown,
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
+    const isCancellationError = (e: unknown): boolean => {
+        const cancelError = e as { code?: string; name?: string; __CANCEL__?: boolean };
+        return cancelError?.code === 'ERR_CANCELED' || cancelError?.name === 'CanceledError' || !!cancelError?.__CANCEL__;
+    };
+
     const status = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
     const msg = extractErrorMessage(error);
-    const finalMsg = msg || opts.throwFallback;
-    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
+    const finalMsg = msg ?? opts.throwFallback;
+    logger.error(`${opts.logContext}:`, finalMsg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
+
+    if (isCancellationError(error)) {
+        throw error;
+    }
 
     if (status === undefined) {
         // Non-HTTP error (e.g. a logic-level throw before/without an HTTP response).
