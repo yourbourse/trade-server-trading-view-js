@@ -57,6 +57,11 @@ export function getTraceReferenceFromError(error: unknown): RequestTraceReferenc
     };
 }
 
+const isCancellationError = (error: unknown): boolean => {
+    const cancelError = error as { code?: string; name?: string; __CANCEL__?: boolean };
+    return cancelError?.code === 'ERR_CANCELED' || cancelError?.name === 'CanceledError' || !!cancelError?.__CANCEL__;
+};
+
 /**
  * Handles API errors uniformly across the application
  * Extracts meaningful error message, logs it, shows notification, and re-throws
@@ -92,11 +97,6 @@ export function handleMutationError(
     error: unknown,
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
-    const isCancellationError = (e: unknown): boolean => {
-        const cancelError = e as { code?: string; name?: string; __CANCEL__?: boolean };
-        return cancelError?.code === 'ERR_CANCELED' || cancelError?.name === 'CanceledError' || !!cancelError?.__CANCEL__;
-    };
-
     const status = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
     const msg = extractErrorMessage(error);
