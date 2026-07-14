@@ -39,7 +39,7 @@ function loadUserCredentials(): Omit<TradeServerConfig, 'timeout'> {
 
     // Default/fallback configuration
     return {
-        server: 'https://uat.api.yourbourse.trade:3XXXX', // Update with your Trade Server base URL
+        server: 'https://tsXXX-uat.yourbourse.trade', // Update with your Trade Server base URL
         user: {
             login: 1,
             password: '',

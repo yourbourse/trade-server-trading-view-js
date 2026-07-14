@@ -304,7 +304,7 @@ export const CONFIG: AppConfig = {
         theme: 'dark',
     },
     tradeServer: {
-        server: 'https://uat.api.yourbourse.trade:32285',
+        server: 'https://ts285-uat.yourbourse.trade',
         user: {
             login: 10,
             password: '',  // Signing token (set after authentication)

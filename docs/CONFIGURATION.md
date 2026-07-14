@@ -54,7 +54,7 @@ tradeServer: {
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `server` | `string` | From sign-in form | Server base URL, e.g. `https://uat.api.yourbourse.trade:32285` |
+| `server` | `string` | From sign-in form | Server base URL, e.g. `https://ts285-uat.yourbourse.trade` |
 | `user.login` | `number` | From sign-in form | Account login number |
 | `user.password` | `string` | From sign-in form | Password for authentication and then Signing token (used for HMAC signing, not the actual password) |
 | `user.apiKey` | `string` | Set after authentication | API token (returned by sign-in) |
@@ -73,7 +73,7 @@ tradeServer: {
 // Stored in sessionStorage by the sign-in page:
 sessionStorage.setItem('userCredentials', JSON.stringify({
   login: 1002,
-  server: 'https://uat.api.yourbourse.trade:32285'
+  server: 'https://ts285-uat.yourbourse.trade'
 }));
 // Note: baseUrl and wsUrl are derived from 'server' using deriveServerUrls()
 ```
@@ -256,7 +256,7 @@ For production builds (`npm run build`):
 ```typescript
 const CONFIG: AppConfig = {
   tradeServer: {
-    server: 'https://uat.api.yourbourse.trade:32285',
+    server: 'https://ts285-uat.yourbourse.trade',
     user: {
       login: 1002,
       password: '',            // Signing token (set from sessionStorage)
