@@ -91,7 +91,9 @@ export function handleApiError(error: unknown, context: string): never {
  * different failed mutations within the dedup window both surface instead
  * of the second being suppressed as a "duplicate" of the first.
  *
- * @throws Always throws an Error with the extracted message (or `throwFallback`)
+ * @throws {unknown} Rethrows the original error unchanged if it is a cancellation error
+ *   (Axios `ERR_CANCELED` / `CanceledError` / legacy `__CANCEL__`).
+ * @throws {Error} Throws a new `Error` with the extracted message (or `throwFallback`) for all other errors.
  */
 export function handleMutationError(
     error: unknown,
