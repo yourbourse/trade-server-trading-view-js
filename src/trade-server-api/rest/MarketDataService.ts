@@ -26,6 +26,7 @@ import { getGETHeaders, executeAuthenticatedRequest } from '../../utils/api.js';
 import type { TracingHeaders } from '../../utils/traceContext.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
+import { RequestCache } from '../../utils/requestCache.js';
 
 /** Symbol specs are stable for a session; keep long enough to collapse TV's parallel lookups. */
 const SYMBOL_INFO_CACHE_TTL_MS = 5 * 60_000;
@@ -33,25 +34,13 @@ const SYMBOL_INFO_CACHE_TTL_MS = 5 * 60_000;
 /** Full symbol list is large and stable; cache across Watchlist/search keystrokes. */
 const SYMBOLS_LIST_CACHE_TTL_MS = 5 * 60_000;
 
-interface SymbolInfoCacheEntry {
-    data: Symbol;
-    expiresAt: number;
-}
-
-interface SymbolsListCacheEntry {
-    data: SymbolCollection;
-    expiresAt: number;
-}
-
 export class MarketDataService {
     private user: AuthUser;
     private log = logger.child('MarketDataService');
-    private readonly symbolInfoCache = new Map<string, SymbolInfoCacheEntry>();
-    private readonly symbolInfoInFlight = new Map<string, Promise<Symbol>>();
-    private readonly symbolsListCache = new Map<string, SymbolsListCacheEntry>();
-    private readonly symbolsListInFlight = new Map<string, Promise<SymbolCollection>>();
-    /** Collapses parallel getTicker calls; live freshness comes from WS via the datafeed. */
-    private readonly tickerInFlight = new Map<string, Promise<Quote>>();
+    private readonly symbolInfoCache = new RequestCache<Symbol>(SYMBOL_INFO_CACHE_TTL_MS);
+    private readonly symbolsListCache = new RequestCache<SymbolCollection>(SYMBOLS_LIST_CACHE_TTL_MS);
+    /** ttl 0: collapses parallel getTicker calls only; live freshness comes from WS via the datafeed. */
+    private readonly tickerCache = new RequestCache<Quote>(0);
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -70,33 +59,7 @@ export class MarketDataService {
             return this.fetchSymbolInfo(symbol, locale, ifNoneMatch);
         }
 
-        const cacheKey = `${locale}:${symbol}`;
-        const cached = this.symbolInfoCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-            this.log.debug(`Symbol info cache hit: ${symbol}`);
-            return cached.data;
-        }
-
-        const existingRequest = this.symbolInfoInFlight.get(cacheKey);
-        if (existingRequest) {
-            this.log.debug(`Symbol info in-flight reuse: ${symbol}`);
-            return existingRequest;
-        }
-
-        const request = this.fetchSymbolInfo(symbol, locale, null)
-            .then((data) => {
-                this.symbolInfoCache.set(cacheKey, {
-                    data,
-                    expiresAt: Date.now() + SYMBOL_INFO_CACHE_TTL_MS,
-                });
-                return data;
-            })
-            .finally(() => {
-                this.symbolInfoInFlight.delete(cacheKey);
-            });
-
-        this.symbolInfoInFlight.set(cacheKey, request);
-        return request;
+        return this.symbolInfoCache.get(`${locale}:${symbol}`, () => this.fetchSymbolInfo(symbol, locale, null));
     }
 
     private async fetchSymbolInfo(
@@ -144,38 +107,14 @@ export class MarketDataService {
         nextToken: string | null = null,
         ifNoneMatch: string | null = null
     ): Promise<SymbolCollection> {
-        // Conditional / paginated requests must hit the network.
+        // Conditional requests must hit the network; skip shared cache.
         if (ifNoneMatch) {
             return this.fetchSymbols(locale, maxResults, nextToken, ifNoneMatch);
         }
 
-        const cacheKey = `${locale}:${maxResults ?? ''}:${nextToken ?? ''}`;
-        const cached = this.symbolsListCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-            this.log.debug('Symbols list cache hit');
-            return cached.data;
-        }
-
-        const existingRequest = this.symbolsListInFlight.get(cacheKey);
-        if (existingRequest) {
-            this.log.debug('Symbols list in-flight reuse');
-            return existingRequest;
-        }
-
-        const request = this.fetchSymbols(locale, maxResults, nextToken, null)
-            .then((data) => {
-                this.symbolsListCache.set(cacheKey, {
-                    data,
-                    expiresAt: Date.now() + SYMBOLS_LIST_CACHE_TTL_MS,
-                });
-                return data;
-            })
-            .finally(() => {
-                this.symbolsListInFlight.delete(cacheKey);
-            });
-
-        this.symbolsListInFlight.set(cacheKey, request);
-        return request;
+        return this.symbolsListCache.get(`${locale}:${maxResults ?? ''}:${nextToken ?? ''}`, () =>
+            this.fetchSymbols(locale, maxResults, nextToken, null)
+        );
     }
 
     private async fetchSymbols(
@@ -226,18 +165,7 @@ export class MarketDataService {
      * own cache; a short REST TTL only caused re-fetches when Watchlist re-asked.
      */
     async getTicker(symbol: string): Promise<Quote> {
-        const existingRequest = this.tickerInFlight.get(symbol);
-        if (existingRequest) {
-            this.log.debug(`Ticker in-flight reuse: ${symbol}`);
-            return existingRequest;
-        }
-
-        const request = this.fetchTicker(symbol).finally(() => {
-            this.tickerInFlight.delete(symbol);
-        });
-
-        this.tickerInFlight.set(symbol, request);
-        return request;
+        return this.tickerCache.get(symbol, () => this.fetchTicker(symbol));
     }
 
     private async fetchTicker(symbol: string): Promise<Quote> {

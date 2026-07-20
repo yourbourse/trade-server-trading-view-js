@@ -37,20 +37,20 @@ import {
 import { executeAuthenticatedRequest, executeAuthenticatedDeleteWithPath } from '../../utils/api.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
+import { RequestCache } from '../../utils/requestCache.js';
 
 /** Positions change via WS; short TTL only collapses parallel broker init fetches. */
 const POSITIONS_CACHE_TTL_MS = 2_000;
 
-interface PositionsCacheEntry {
-    data: PositionsCollection;
-    expiresAt: number;
-}
-
 export class TradingService {
     private user: AuthUser;
     private log = logger.child('TradingService');
-    private readonly positionsCache = new Map<string, PositionsCacheEntry>();
-    private readonly positionsInFlight = new Map<string, Promise<PositionsCollection | undefined>>();
+    // undefined means the request failed and the error was swallowed by the
+    // interceptor; don't cache it, let the next caller retry.
+    private readonly positionsCache = new RequestCache<PositionsCollection | undefined>(
+        POSITIONS_CACHE_TTL_MS,
+        (data) => data !== undefined
+    );
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -219,47 +219,13 @@ export class TradingService {
         filter: OpenPositionRequestFilter = {},
         nextToken: string | null = null
     ): Promise<PositionsCollection | undefined> {
-        const cacheKey = this.positionsCacheKey(filter, nextToken);
-
-        const cached = this.positionsCache.get(cacheKey);
-        if (cached && cached.expiresAt > Date.now()) {
-            this.log.debug('Positions cache hit');
-            return cached.data;
-        }
-
-        const existingRequest = this.positionsInFlight.get(cacheKey);
-        if (existingRequest) {
-            this.log.debug('Positions in-flight reuse');
-            return existingRequest;
-        }
-
-        const request = this.fetchPositions(filter, nextToken)
-            .then((data) => {
-                // undefined means the request failed and the error was swallowed
-                // by the interceptor; don't cache it, let the next caller retry.
-                if (data !== undefined) {
-                    this.positionsCache.set(cacheKey, {
-                        data,
-                        expiresAt: Date.now() + POSITIONS_CACHE_TTL_MS,
-                    });
-                }
-                return data;
-            })
-            .finally(() => {
-                this.positionsInFlight.delete(cacheKey);
-            });
-
-        this.positionsInFlight.set(cacheKey, request);
-        return request;
+        const cacheKey = `${JSON.stringify(filter)}:${nextToken ?? ''}`;
+        return this.positionsCache.get(cacheKey, () => this.fetchPositions(filter, nextToken));
     }
 
     /** Drop cached snapshots after any mutation that can change open positions. */
     private invalidatePositionsCache(): void {
         this.positionsCache.clear();
-    }
-
-    private positionsCacheKey(filter: OpenPositionRequestFilter, nextToken: string | null): string {
-        return `${JSON.stringify(filter)}:${nextToken ?? ''}`;
     }
 
     private async fetchPositions(
