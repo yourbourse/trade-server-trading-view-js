@@ -737,6 +737,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
 
     /**
      * Release a listener for `symbol`. Wire unsubscribe fires only on 1→0.
+     *
+     * Keep quotesCache / latestRawQuotes: Watchlist often unsubscribes then
+     * resubscribes (or calls getQuotes again) when symbols are added. Clearing
+     * here forced a fresh REST /quote for symbols that already had live WS data.
+     * Caches are still reset on reconnect in handleReconnect().
      */
     private releaseL1(symbol: string, listenerGUID: string): void {
         const set = this.l1Listeners.get(symbol);
@@ -744,8 +749,6 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         set.delete(listenerGUID);
         if (set.size > 0) return;
         this.l1Listeners.delete(symbol);
-        this.latestRawQuotes.delete(symbol);
-        this.quotesCache.delete(symbol);
         if (!this.api.isConnected()) return;
         this.api
             .unsubscribeFromQuotes(symbol)
