@@ -224,6 +224,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
             const order = this.orderService.getCachedOrders().find((o) => o.id === result.orderId);
             if (order) {
                 this.host.orderUpdate?.(order);
+                const sideLabel = order.side === Side.Buy ? 'Buy' : 'Sell';
+                notificationService.success('Order placed', `${sideLabel} ${order.qty} ${order.symbol} order placed successfully.`);
             }
         }
 
@@ -237,9 +239,16 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         if (bracketOrder.parentType !== undefined) {
             const cached = this.orderService.getCachedOrders().find((o) => o.id === order.id);
+
             if (cached && order.qty !== cached.qty) {
                 const message =
                     'Quantity cannot be changed for stop loss / take profit orders — it always matches the position quantity.';
+                notificationService.error('Unable to modify order', message);
+                throw new Error(message);
+            }
+
+            if (cached && order.duration?.type !== cached.duration?.type) {
+                const message = 'Time in force cannot be changed for stop loss / take profit orders.';
                 notificationService.error('Unable to modify order', message);
                 throw new Error(message);
             }
