@@ -108,9 +108,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
                 const detail = extractErrorMessage({ ...problemDetails, message: error.message });
                 notificationService.error(
                     'Connection Problem',
-                    detail && detail !== 'Unknown error'
-                        ? detail
-                        : 'The server encountered a problem. Please try again in a moment.',
+                    detail ?? 'The server encountered a problem. Please try again in a moment.',
                     trace
                 );
                 break;
@@ -126,7 +124,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
                 const title =
                     problemDetails.title ||
                     (status >= 400 && status < 500 ? `Error ${status}` : 'Server Error');
-                notificationService.error(title, errorMessage, trace);
+                notificationService.error(title, errorMessage ?? 'Unknown error', trace);
                 break;
             }
         }
