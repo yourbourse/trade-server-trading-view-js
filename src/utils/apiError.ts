@@ -22,13 +22,13 @@ export type ApiError = ProblemDetails & {
 /**
  * Extracts a human-readable error message from API error or ProblemDetails
  * This is the core message extraction logic used by axios interceptor and error handlers
- * Priority: detail > title > message > description > 'Unknown error'
+ * Priority: detail > title > message > description
  */
-export function extractErrorMessage(error: unknown): string {
+export function extractErrorMessage(error: unknown): string | undefined {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const errorData = error as any;
 
-    return errorData?.detail || errorData?.title || errorData?.message || errorData?.description || 'Unknown error';
+    return errorData?.detail || errorData?.title || errorData?.message || errorData?.description;
 }
 
 /**
@@ -57,6 +57,11 @@ export function getTraceReferenceFromError(error: unknown): RequestTraceReferenc
     };
 }
 
+const isCancellationError = (error: unknown): boolean => {
+    const cancelError = error as { code?: string; name?: string; __CANCEL__?: boolean };
+    return cancelError?.code === 'ERR_CANCELED' || cancelError?.name === 'CanceledError' || !!cancelError?.__CANCEL__;
+};
+
 /**
  * Handles API errors uniformly across the application
  * Extracts meaningful error message, logs it, shows notification, and re-throws
@@ -66,7 +71,7 @@ export function getTraceReferenceFromError(error: unknown): RequestTraceReferenc
  * @throws Always throws an Error with the extracted message
  */
 export function handleApiError(error: unknown, context: string): never {
-    const errorMessage = extractErrorMessage(error);
+    const errorMessage = extractErrorMessage(error) ?? 'Unknown error';
     const statusCode = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
 
@@ -86,21 +91,38 @@ export function handleApiError(error: unknown, context: string): never {
  * different failed mutations within the dedup window both surface instead
  * of the second being suppressed as a "duplicate" of the first.
  *
- * @throws Always throws an Error with the extracted message (or `throwFallback`)
+ * @throws {unknown} Rethrows the original error unchanged if it is a cancellation error
+ *   (Axios `ERR_CANCELED` / `CanceledError` / legacy `__CANCEL__`).
+ * @throws {Error} Throws a new `Error` with the extracted message (or `throwFallback`) for all other errors.
  */
 export function handleMutationError(
     error: unknown,
     opts: { logContext: string; notifyTitle: string; throwFallback: string }
 ): never {
+    if (isCancellationError(error)) {
+        throw error;
+    }
+
     const status = getErrorStatus(error);
     const trace = getTraceReferenceFromError(error);
-    // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
-    // mutation-specific toast here too would double up with the probe's own
-    // "Reconnected" notice for what's the same underlying stale-session event.
-    if (status !== undefined && status >= 500 && status !== 502) {
+    const msg = extractErrorMessage(error);
+    const finalMsg = msg ?? opts.throwFallback;
+    logger.error(`${opts.logContext}:`, finalMsg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
+
+    if (status === undefined) {
+        // Non-HTTP error (e.g. a logic-level throw before/without an HTTP response).
+        // The Axios interceptor did not fire, so we must notify here to avoid a silent
+        // failure — show the actual error message rather than a generic fallback.
+        notificationService.error(opts.notifyTitle, finalMsg, trace);
+    } else if (status >= 500 && status !== 502) {
+        // 502 is reserved for the coalesced refresh probe (see axios.ts) — showing a
+        // mutation-specific toast would double up with the probe's own "Reconnected"
+        // notice for what's the same underlying stale-session event.
+        // Other 5xx: state is uncertain, show a generic "check your orders" message.
         notificationService.error(opts.notifyTitle, 'Check your orders before retrying', trace);
     }
-    const msg = extractErrorMessage(error);
-    logger.error(`${opts.logContext}:`, msg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
-    throw new Error(msg || opts.throwFallback);
+    // 4xx (400, 422, …) and 401/403/502 are already handled by the Axios interceptor —
+    // no second toast needed here.
+
+    throw new Error(finalMsg);
 }
