@@ -3,29 +3,6 @@
  * Each Account Manager page is a table, where each column is an `AccountManagerColumnBase` object.
  * These objects are used in the `accountManagerInfo` method which builds the Account Manager.
  */
-// import {
-// 	AccountManagerColumn,
-// 	OrderTableColumn,
-// 	//OrderStatusFilter,
-// 	StandardFormatterName,
-// 	FormatterName,
-// } from '../../charting_library/charting_library';
-
-// import {
-// 	AccountManagerColumn,
-// 	OrderTableColumn,
-// 	OrderStatusFilter,
-// 	StandardFormatterName,
-// 	FormatterName,
-// } from '../../charting_library/charting_library';
-
-// import type {
-// 	AccountManagerColumn,
-// 	OrderTableColumn,
-// 	OrderStatusFilter,
-// 	StandardFormatterName,
-// 	FormatterName,
-// } from '../../charting_library/charting_library';
 
 import { AccountManagerColumn, FormatterName, OrderTableColumn } from 'charting_library/charting_library';
 import { CommonAccountManagerColumnId } from '../../charting_library/broker-api';
@@ -93,6 +70,18 @@ export const ordersPageColumns: OrderTableColumn[] = [
         label: 'Order ID',
         id: 'id',
         dataFields: ['id'],
+    },
+    {
+        label: 'Parent Order',
+        id: 'parentOrderId',
+        dataFields: ['parentOrderId'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Parent Position',
+        id: 'parentPositionId',
+        dataFields: ['parentPositionId'],
+        formatter: 'text' as StandardFormatterName,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
@@ -163,6 +152,19 @@ export const positionsPageColumns: AccountManagerColumn[] = [
         dataFields: ['takeProfit'],
         formatter: 'formatPrice' as StandardFormatterName,
     },
+    {
+        label: 'Commission',
+        alignment: 'right',
+        id: 'commission',
+        dataFields: ['commission'],
+        formatter: 'fixed' as StandardFormatterName,
+    },
+    {
+        label: 'Position ID',
+        id: 'id',
+        dataFields: ['id'],
+        formatter: 'text' as StandardFormatterName,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;
 
@@ -226,11 +228,25 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
         formatter: 'text' as StandardFormatterName,
     },
     {
+        label: 'Commission',
+        alignment: 'right',
+        id: 'commission',
+        dataFields: ['commission'],
+        formatter: 'fixed' as StandardFormatterName,
+    },
+    {
         label: 'Trade ID',
         alignment: 'right',
         id: 'tradeId',
         dataFields: ['tradeId'],
         formatter: 'integerSeparated' as StandardFormatterName,
+    },
+    {
+        label: 'Position ID',
+        alignment: 'right',
+        id: 'positionId',
+        dataFields: ['positionId'],
+        formatter: 'text' as StandardFormatterName,
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ] as any;

@@ -8,18 +8,20 @@ import { SubscriptionManager } from './SubscriptionManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import { WebSocketConnectionError, SubscriptionTimeoutError, SubscriptionError } from '../errors/index.js';
 import { logger } from '../../utils/logger.js';
+import { WebSocketCloseCode } from '../constants/WebSocketCloseCodes.js';
+import { createTracingHeaders } from '../../utils/traceContext.js';
 
 export interface WebSocketClientOptions {
     /** WebSocket URL */
     url: string;
     /** API key for authentication */
     apiKey: string;
+    /** Trading account login for X-YB-TA-ID tracing header */
+    tradingAccountId?: number;
     /** Auto-reconnect on disconnect */
     autoReconnect?: boolean;
-    /** Reconnect delay in milliseconds */
+    /** Fixed delay between reconnect attempts, in milliseconds. Reconnection retries indefinitely. */
     reconnectDelay?: number;
-    /** Maximum reconnect attempts (0 = infinite) */
-    maxReconnectAttempts?: number;
     /** Heartbeat interval in milliseconds */
     heartbeatInterval?: number;
     /** Subscription timeout in milliseconds */
@@ -32,9 +34,12 @@ interface PendingRequest {
     timeout?: ReturnType<typeof setTimeout>;
 }
 
+type ResolvedWebSocketClientOptions = Required<Omit<WebSocketClientOptions, 'tradingAccountId'>> &
+    Pick<WebSocketClientOptions, 'tradingAccountId'>;
+
 export class WebSocketClient {
     private ws: WebSocket | null = null;
-    private options: Required<WebSocketClientOptions>;
+    private options: ResolvedWebSocketClientOptions;
     private subscriptions: SubscriptionManager;
     private router: MessageRouter;
     private reqIdCounter = 0;
@@ -45,14 +50,20 @@ export class WebSocketClient {
     private log = logger.child('WebSocketClient');
     private isConnecting = false;
     private reconnectListeners = new Set<() => void>();
+    private authFailureListeners = new Set<() => void>();
     private manuallyClosed = false;
+    // True once the socket has completed at least one successful open. Distinct
+    // from reconstructing "was this a reconnect" via reconnectAttempts, which
+    // reconnect() intentionally zeroes before calling connect() — reusing that
+    // counter here would make onopen wrongly treat a manual reconnect (e.g. after
+    // a long outage) as a fresh (non-reconnect) connection and skip re-subscription.
+    private hasConnectedOnce = false;
 
     constructor(options: WebSocketClientOptions) {
         this.options = {
             autoReconnect: true,
-            reconnectDelay: 5000,
-            maxReconnectAttempts: 10,
-            heartbeatInterval: 30000,
+            reconnectDelay: 2000,
+            heartbeatInterval: 10000,
             subscriptionTimeout: 10000,
             ...options,
         };
@@ -78,6 +89,13 @@ export class WebSocketClient {
         this.options.apiKey = apiKey;
     }
 
+    private getMessageHeaders(): Record<string, string> {
+        return {
+            'X-YB-API-Key': this.options.apiKey,
+            ...createTracingHeaders(this.options.tradingAccountId),
+        };
+    }
+
     /**
      * Check if WebSocket is connected
      */
@@ -93,6 +111,30 @@ export class WebSocketClient {
     onReconnect(cb: () => void): () => void {
         this.reconnectListeners.add(cb);
         return () => this.reconnectListeners.delete(cb);
+    }
+
+    /**
+     * Register a callback fired when the server closes the WebSocket with a
+     * policy-violation code (1008) — which signals a revoked / banned session.
+     * The callback owner (TradeServerClient) is responsible for signing out.
+     * Returns a disposer that removes the listener.
+     */
+    onAuthFailure(cb: () => void): () => void {
+        this.authFailureListeners.add(cb);
+        return () => this.authFailureListeners.delete(cb);
+    }
+
+    /**
+     * Reset the reconnect counter and attempt a fresh connection immediately,
+     * without waiting for the next scheduled retry.
+     * Resetting reconnectAttempts here is safe for onopen's "was this a
+     * reconnect" check — that check reads hasConnectedOnce, not
+     * reconnectAttempts, so re-subscription still fires correctly afterward.
+     */
+    reconnect(): void {
+        this.cancelReconnect();
+        this.reconnectAttempts = 0;
+        void this.connect();
     }
 
     /**
@@ -113,19 +155,36 @@ export class WebSocketClient {
         this.manuallyClosed = false;
 
         return new Promise((resolve, reject) => {
+            // Tracks whether THIS connect() call's promise has settled yet (via
+            // onopen below). Needed because onclose unconditionally clears
+            // isConnecting, which defeats both the 1008 check and the timeout
+            // guard's own isConnecting check — without this, a close that
+            // arrives before the first successful open (e.g. unreachable host,
+            // DNS failure, TLS/handshake error — any non-1008 reason) would
+            // leave this promise settled neither by onopen, onclose, nor the
+            // timeout, hanging the caller (e.g. app init) forever.
+            let settled = false;
+
             try {
                 this.log.info(`Connecting to WebSocket: ${this.options.url}`);
                 this.ws = new WebSocket(this.options.url);
 
                 this.ws.onopen = () => {
-                    // Snapshot before resetting reconnectAttempts — otherwise the
-                    // first reconnect fires with attempts === 0 and skips listeners.
-                    const wasReconnect = this.reconnectAttempts > 0;
+                    settled = true;
+                    // hasConnectedOnce (not reconnectAttempts) is the source of truth for
+                    // "is this a reconnect" — reconnect() resets reconnectAttempts to 0
+                    // before calling connect(), so that counter alone would misclassify
+                    // a manual post-exhaustion reconnect as an initial connection.
+                    const wasReconnect = this.hasConnectedOnce;
+                    this.hasConnectedOnce = true;
                     this.log.info('WebSocket connected');
                     this.isConnecting = false;
                     this.reconnectAttempts = 0;
                     this.startHeartbeat();
-                    this.subscriptions.notify('connected', {});
+                    // reconnect: true tells TradeServerClient this 'connected' is just the
+                    // raw transport opening again, not yet a confirmation that channel
+                    // subscriptions are healthy — see TradeServerClient.onConnectionStateChange.
+                    this.subscriptions.notify('connected', { reconnect: wasReconnect });
                     if (wasReconnect) {
                         for (const cb of this.reconnectListeners) {
                             try {
@@ -158,6 +217,34 @@ export class WebSocketClient {
                     this.isConnecting = false;
                     this.stopHeartbeat();
                     this.subscriptions.notify('disconnected', { code: event.code, reason: event.reason });
+
+                    if (event.code === WebSocketCloseCode.PolicyViolation) {
+                        // 1008 = server-side policy violation (revocation, ban, etc.).
+                        // All such closures are session-ending — do not reconnect.
+                        this.log.warn('WebSocket closed with policy violation (1008) — firing auth-failure listeners');
+                        for (const cb of this.authFailureListeners) {
+                            try { cb(); } catch (err) { this.log.error('onAuthFailure listener threw', err); }
+                        }
+                        // If 1008 arrives before onopen (rejected during the initial
+                        // handshake), settle the in-flight connect() promise so its
+                        // awaiter doesn't hang. No-op if already resolved.
+                        settled = true;
+                        reject(new WebSocketConnectionError('WebSocket closed by server policy (1008)'));
+                        return;
+                    }
+
+                    // Any other close before the first successful open (unreachable
+                    // host, DNS failure, TLS/handshake error, etc.) — reject so the
+                    // caller doesn't hang forever. A close after a prior successful
+                    // open is a no-op here since the promise already resolved.
+                    if (!settled) {
+                        settled = true;
+                        reject(
+                            new WebSocketConnectionError(
+                                `WebSocket closed before connecting (code: ${event.code}, reason: ${event.reason})`
+                            )
+                        );
+                    }
 
                     if (this.options.autoReconnect && !this.manuallyClosed) {
                         this.scheduleReconnect();
@@ -210,15 +297,11 @@ export class WebSocketClient {
             return; // Already scheduled
         }
 
-        if (this.options.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-            this.log.error(`Max reconnect attempts (${this.options.maxReconnectAttempts}) reached`);
-            return;
-        }
-
         this.reconnectAttempts++;
-        const delay = this.options.reconnectDelay * Math.min(this.reconnectAttempts, 5); // Exponential backoff (capped at 5x)
+        const delay = this.options.reconnectDelay;
 
         this.log.info(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+        this.subscriptions.notify('reconnecting', { attempt: this.reconnectAttempts });
 
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
@@ -266,9 +349,7 @@ export class WebSocketClient {
         const reqId = this.generateReqId();
         this.send({
             m: 'ping',
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
     }
@@ -341,9 +422,7 @@ export class WebSocketClient {
             m: 'subscribe',
             c: channel,
             p: params || {},
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
 
@@ -351,27 +430,35 @@ export class WebSocketClient {
     }
 
     /**
-     * Unsubscribe from a WebSocket channel
+     * Unsubscribe from a WebSocket channel.
+     * Set awaitAck=false for fire-and-forget (e.g. during rapid interval changes)
+     * where local cleanup is sufficient and timeout errors are expected.
      */
-    async unsubscribeFromChannel(channel: WebSocketChannel, params?: Record<string, unknown>): Promise<unknown> {
+    async unsubscribeFromChannel(
+        channel: WebSocketChannel,
+        params?: Record<string, unknown>,
+        awaitAck = true
+    ): Promise<unknown> {
         const reqId = this.generateReqId();
 
-        const promise = new Promise((resolve, reject) => {
-            const timeoutHandle = setTimeout(() => {
-                this.pendingRequests.delete(reqId);
-                reject(new SubscriptionTimeoutError(channel));
-            }, this.options.subscriptionTimeout);
+        let promise: Promise<unknown> = Promise.resolve({ success: true, channel });
 
-            this.pendingRequests.set(reqId, { resolve, reject, timeout: timeoutHandle });
-        });
+        if (awaitAck) {
+            promise = new Promise((resolve, reject) => {
+                const timeoutHandle = setTimeout(() => {
+                    this.pendingRequests.delete(reqId);
+                    reject(new SubscriptionTimeoutError(channel));
+                }, this.options.subscriptionTimeout);
+
+                this.pendingRequests.set(reqId, { resolve, reject, timeout: timeoutHandle });
+            });
+        }
 
         this.send({
             m: 'unsubscribe',
             c: channel,
             p: params || {},
-            h: {
-                'X-YB-API-Key': this.options.apiKey,
-            },
+            h: this.getMessageHeaders(),
             reqId: reqId,
         });
 

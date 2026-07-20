@@ -1,5 +1,6 @@
 {
   "private": true,
+  "version": "26.7.1",
   "description": "TradingView Integration with YourBourse Trade Server",
   "type": "module",
   "author": "YourBourse",
@@ -26,7 +27,7 @@
     "contracts-public": "rimraf src/schema/public-api && node src/schema/contracts-public.js"
   },
   "dependencies": {
-    "axios": "^1.15.0",
+    "axios": "^1.15.2",
     "crypto-js": "^4.2.0"
   },
   "devDependencies": {

@@ -2,7 +2,7 @@ import { Position } from '../../../charting_library/charting_library';
 import type { Position as TradeServerPosition, PositionsCollection, PlaceOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { transformPositions } from '../type-mappings';
-import { handleApiError } from '@/utils/apiError';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
@@ -43,7 +43,7 @@ export class PositionService {
 
             logger.debug('Cache empty, fetching from server');
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             this.cachedPositions = transformPositions(positions) as Position[];
             logger.info('Fetched', this.cachedPositions.length, 'positions from server');
             return this.cachedPositions;
@@ -60,7 +60,7 @@ export class PositionService {
 
         try {
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             const serverPosition = positions.find((p: TradeServerPosition) => p.id.toString() === positionId);
 
             if (!serverPosition) {
@@ -122,7 +122,11 @@ export class PositionService {
 
             logger.info('Position brackets modified successfully:', positionId);
         } catch (error) {
-            handleApiError(error, 'Error modifying position brackets');
+            handleMutationError(error, {
+                logContext: 'Error modifying position brackets',
+                notifyTitle: 'Bracket update may not have gone through',
+                throwFallback: 'Position modification failed',
+            });
         }
     }
 
@@ -137,20 +141,40 @@ export class PositionService {
             }
 
             const closeQty = amount || position.qty;
+            const tif = await this.resolveCloseTif(position.symbol);
 
             const closeOrder: PlaceOrder = {
                 s: position.symbol,
                 q: closeQty,
                 S: position.side === Side.Buy ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'IOC',
+                tif,
                 pi: parseInt(positionId),
             };
 
             await this.api.trading.placeOrder(closeOrder);
         } catch (error) {
-            handleApiError(error, 'Error closing position');
+            handleMutationError(error, {
+                logContext: 'Error closing position',
+                notifyTitle: 'Position may not have been closed',
+                throwFallback: 'Position close failed',
+            });
         }
+    }
+
+    private async resolveCloseTif(symbol: string): Promise<'IOC' | 'FOK'> {
+        try {
+            const symbolConfig = await this.api.marketData.getSymbolInfo(symbol);
+            if (symbolConfig.ioc) {
+                return 'IOC';
+            }
+            if (symbolConfig.fok) {
+                return 'FOK';
+            }
+        } catch (error) {
+            logger.warn('Failed to resolve TIF for close, defaulting to IOC', error);
+        }
+        return 'IOC';
     }
 
     markBracketEdit(positionId: string, stopLoss?: number, takeProfit?: number): void {
@@ -188,25 +212,31 @@ export class PositionService {
 
         try {
             const positionsResult = await this.api.trading.getPositions({});
-            const positions = (positionsResult as PositionsCollection).positions || [];
+            const positions = (positionsResult as PositionsCollection)?.positions || [];
             const position = positions.find((p: TradeServerPosition) => p.id.toString() === positionId);
 
             if (!position) {
                 throw new Error('Position not found');
             }
 
+            const tif = await this.resolveCloseTif(position.s);
+
             const reverseOrder: PlaceOrder = {
                 s: position.s,
                 q: position.q * 2,
                 S: position.S === 'buy' ? 'sell' : 'buy',
                 t: 'Market',
-                tif: 'IOC',
+                tif,
                 pi: position.id,
             };
 
             await this.api.trading.placeOrder(reverseOrder);
         } catch (error) {
-            handleApiError(error, 'Error reversing position');
+            handleMutationError(error, {
+                logContext: 'Error reversing position',
+                notifyTitle: 'Position may not have been reversed',
+                throwFallback: 'Position reverse failed',
+            });
         }
     }
 }

@@ -1,7 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
-import { resolve } from 'path';
-import { existsSync, copyFileSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { resolve, join } from 'path';
+import { existsSync, copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'fs';
 import banner from 'vite-plugin-banner';
 
 /**
@@ -59,11 +58,15 @@ export default defineConfig(({ mode }) => {
 
   const version: string = env.VERSION || "0.0.0";
 
+  const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'));
+  const libVersion: string = pkg.version || '0.0.0';
+
   return {
     root: '.',
     publicDir: 'public',
     define: {
-      __APP_VERSION__: JSON.stringify(version)
+      __APP_VERSION__: JSON.stringify(version),
+      __LIB_VERSION__: JSON.stringify(libVersion),
     },
     resolve: {
       alias: {

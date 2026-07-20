@@ -2,11 +2,22 @@ import { Order, PlaceOrderResult, Position, PreOrder } from '../../../charting_l
 import type { Order as TradeServerOrder, PlaceOrder, ModifyOrder } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { enrichPositionBracketOrders, transformOrders, unmapOrderType, unmapTimeInForce } from '../type-mappings';
-import { handleApiError } from '@/utils/apiError';
+import { handleApiError, handleMutationError } from '@/utils/apiError';
 import { Side, OrderType, OrderStatus, ParentType, isStopBracketOrderType } from '../types';
 import { createLogger } from '@/utils/logger.js';
 
 const logger = createLogger({ prefix: '[OrderService]' });
+
+function withStopDisplayPrice(order: Order, stopPrice: number): Order {
+    const hasFill = (order.filledQty ?? 0) > 0;
+    const shouldMirrorAvgPrice = order.type === OrderType.Stop && !hasFill;
+
+    return {
+        ...order,
+        stopPrice,
+        ...(shouldMirrorAvgPrice && { avgPrice: stopPrice }),
+    };
+}
 
 export class OrderService {
     private api: TradeServerClient;
@@ -118,9 +129,9 @@ export class OrderService {
                 qty: position.qty,
                 status: OrderStatus.Working,
                 stopPrice: position.stopLoss,
+                avgPrice: position.stopLoss,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
@@ -138,7 +149,6 @@ export class OrderService {
                 limitPrice: position.takeProfit,
                 parentId,
                 parentType: ParentType.Position,
-                avg: 0,
                 filledQty: 0,
                 duration: { type: 'gtc' },
             } as Order);
@@ -170,7 +180,7 @@ export class OrderService {
                     return [];
                 }
                 if (order.stopPrice !== position.stopLoss) {
-                    const changed = { ...order, stopPrice: position.stopLoss };
+                    const changed = withStopDisplayPrice(order, position.stopLoss);
                     updated.push(changed);
                     return [changed];
                 }
@@ -226,7 +236,7 @@ export class OrderService {
         }
 
         if (isStopBracketOrderType(order.type) && position.stopLoss !== undefined) {
-            return { ...order, stopPrice: position.stopLoss };
+            return withStopDisplayPrice(order, position.stopLoss);
         }
 
         if (order.type === OrderType.Limit && position.takeProfit !== undefined) {
@@ -309,7 +319,7 @@ export class OrderService {
                 orderParams.tp = preOrder.takeProfit;
             }
 
-            const result: TradeServerOrder = await this.api.trading.placeOrder(orderParams);
+            const result: TradeServerOrder | undefined = await this.api.trading.placeOrder(orderParams);
 
             if (!result || !result.id) {
                 throw new Error('Order placement failed');
@@ -324,7 +334,11 @@ export class OrderService {
                 orderId: result.id.toString(),
             };
         } catch (error) {
-            handleApiError(error, 'Error placing order');
+            handleMutationError(error, {
+                logContext: 'Error placing order',
+                notifyTitle: 'Order may not have been placed',
+                throwFallback: 'Order placement failed',
+            });
         }
     }
 
@@ -356,7 +370,11 @@ export class OrderService {
 
             logger.info('Order modified successfully:', order.id);
         } catch (error) {
-            handleApiError(error, 'Error modifying order');
+            handleMutationError(error, {
+                logContext: 'Error modifying order',
+                notifyTitle: 'Order may not have been modified',
+                throwFallback: 'Order modification failed',
+            });
         }
     }
 
@@ -367,7 +385,11 @@ export class OrderService {
             await this.api.trading.cancelOrder(parseInt(orderId));
             logger.info('Order canceled successfully:', orderId);
         } catch (error) {
-            handleApiError(error, 'Error canceling order');
+            handleMutationError(error, {
+                logContext: 'Error canceling order',
+                notifyTitle: 'Order may not have been canceled',
+                throwFallback: 'Order cancellation failed',
+            });
         }
     }
 

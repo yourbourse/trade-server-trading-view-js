@@ -35,7 +35,7 @@ export class AccountService {
      * Get trading account state
      * POST /account/state
      */
-    async getAccountInfo(): Promise<AccountState> {
+    async getAccountInfo(): Promise<AccountState | undefined> {
         this.log.debug('Fetching account info');
         return await executeAuthenticatedGet(this.user, getState);
     }
@@ -44,7 +44,7 @@ export class AccountService {
      * Get account balance(s)/collateral
      * GET /account/balances
      */
-    async getBalance(): Promise<Balance[]> {
+    async getBalance(): Promise<Balance[] | undefined> {
         this.log.debug('Fetching balance');
         return await executeAuthenticatedGet(this.user, sdkGetBalances);
     }
@@ -53,7 +53,7 @@ export class AccountService {
      * Get rate limits and unfilled order count limits
      * GET /limits
      */
-    async getLimits(): Promise<Limits> {
+    async getLimits(): Promise<Limits | undefined> {
         this.log.debug('Fetching limits');
         return await executeAuthenticatedGet(this.user, sdkGetLimits);
     }
@@ -65,7 +65,7 @@ export class AccountService {
     async getTransfersHistory(
         filter: TransferRequestFilter = {},
         nextToken: string | null = null
-    ): Promise<TransferCollection> {
+    ): Promise<TransferCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, getTransfersHistory, filter, extraHeaders);
     }
@@ -79,8 +79,8 @@ export class AccountService {
 
         do {
             const result = await this.getTransfersHistory(filter, nextToken ?? null);
-            allTransfers = allTransfers.concat(result.transfers);
-            nextToken = result.nextToken;
+            allTransfers = allTransfers.concat(result?.transfers ?? []);
+            nextToken = result?.nextToken;
         } while (nextToken);
 
         return allTransfers;
@@ -93,6 +93,9 @@ export class AccountService {
     async getAccountSummary(): Promise<{ state: AccountState; balances: Balance[] }> {
         this.log.debug('Fetching account summary');
         const [state, balances] = await Promise.all([this.getAccountInfo(), this.getBalance()]);
+        if (!state || !balances) {
+            throw new Error('Failed to fetch account summary');
+        }
         return { state, balances };
     }
 
@@ -100,15 +103,15 @@ export class AccountService {
      * Health check / Get server time
      * GET /now
      */
-    async healthCheck(): Promise<Now> {
+    async healthCheck(): Promise<Now | undefined> {
         return await executeAuthenticatedGet(this.user, getNow);
     }
 
     /**
      * Get server time in microseconds
      */
-    async getServerTime(): Promise<string> {
+    async getServerTime(): Promise<string | undefined> {
         const result = await this.healthCheck();
-        return result.now;
+        return result?.now;
     }
 }

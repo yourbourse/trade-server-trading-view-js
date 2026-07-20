@@ -64,7 +64,9 @@ const CONFIG: AppConfig = {
         container: 'tradingview_container',
         library_path: './charting_library/',
         locale: 'en',
-        disabled_features: [],
+        // Suppress TradingView's built-in trading toasts (e.g. "Order rejected").
+        // Custom host.showNotification() calls (our notificationService) still work.
+        disabled_features: ['trading_notifications'],
         enabled_features: [],
         // Chart storage disabled to avoid CORS issues with saveload.tradingview.com
         fullscreen: false,
@@ -114,8 +116,7 @@ const CONFIG: AppConfig = {
         // Reconnection settings
         reconnect: {
             enabled: true,
-            delay: 5000, // 5 seconds
-            maxAttempts: 10,
+            delay: 2000, // 2 seconds, retried indefinitely
         },
     },
 };

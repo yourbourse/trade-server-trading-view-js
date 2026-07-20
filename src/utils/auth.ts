@@ -106,28 +106,29 @@ export function getUserCredentials(): Omit<TradeServerConfig, 'timeout'> | null 
 }
 
 /**
- * Sign out user and clear credentials
+ * Sign out user and clear credentials.
+ * @param reason - Optional reason surfaced as ?reason=… on the sign-in page.
  */
-export function signOut(): void {
-    logger.info('Signing out...');
+export function signOut(reason?: string): void {
+    logger.info('Signing out...', reason ? `(reason: ${reason})` : '');
 
     sessionStorage.removeItem('userCredentials');
     clearStoredTokens();
     logger.debug('SessionStorage cleared');
+
+    const reasonParam = reason ? `?reason=${encodeURIComponent(reason)}` : '';
 
     // Avoid redirect loop - check if already on signin page
     const path = window.location.pathname;
     logger.debug('Current path:', path);
     if (path.includes('/signin')) {
         logger.debug('Already on signin page after logout');
-        // Force reload to reset state
-        window.location.reload();
+        window.location.href = `/signin.html${reasonParam}`;
         return;
     }
 
-    // Redirect to sign-in page
     logger.info('Redirecting to /signin.html');
-    window.location.href = '/signin.html';
+    window.location.href = `/signin.html${reasonParam}`;
 }
 
 /**

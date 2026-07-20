@@ -284,8 +284,7 @@ websocket: {
     // Reconnection settings
     reconnect: {
         enabled: true,
-        delay: 5000,        // 5 seconds
-        maxAttempts: 10
+        delay: 2000        // 2 seconds, retried indefinitely
     }
 }
 ```

@@ -27,8 +27,9 @@ import type {
 import { deriveServerUrls } from '../utils/serverUrl.js';
 import { logger } from '../utils/logger.js';
 import { persistApiToken, getTokenExpiration, signOut } from '../utils/auth.js';
+import { setRefreshProbeHandler } from '../utils/axios.js';
 
-const TOKEN_REFRESH_SAFETY_MARGIN_MS = 60_000;
+const TOKEN_REFRESH_SAFETY_MARGIN_MS = 15 * 60 * 1000;
 
 /**
  * Main Trade Server API Client
@@ -65,8 +66,13 @@ export class TradeServerClient {
 
     // Token refresh scheduler
     private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    private isRefreshing = false;
+    private refreshInFlight: Promise<boolean> | null = null;
     private visibilityListener: (() => void) | null = null;
+
+    // Latched so a subscriber registered after the initial autoSubscribe()
+    // (e.g. the connection indicator, wired up post-connect()) still learns
+    // about a degraded state that was already emitted before it subscribed.
+    private degraded = false;
 
     // Logging
     private log = logger.child('TradeServerClient');
@@ -88,6 +94,10 @@ export class TradeServerClient {
         this.trading = new TradingService(this.user);
         this.marketData = new MarketDataService(this.user);
         this.account = new AccountService(this.user);
+
+        // Register the coalesced refresh as the 401/403/502 probe handler.
+        // Done here (not in connect()) so a 401 on the very first REST call is caught.
+        setRefreshProbeHandler(() => this.refreshNow());
 
         this.log.info('TradeServerClient initialized');
     }
@@ -129,17 +139,42 @@ export class TradeServerClient {
         this.wsClient = new WebSocketClient({
             url: wsUrl,
             apiKey: this.user.apiKey,
+            tradingAccountId: this.user.login,
             autoReconnect: this.config.websocket.reconnect?.enabled ?? true,
-            reconnectDelay: this.config.websocket.reconnect?.delay ?? 5000,
-            maxReconnectAttempts: this.config.websocket.reconnect?.maxAttempts ?? 10,
-            heartbeatInterval: 30000,
+            reconnectDelay: this.config.websocket.reconnect?.delay ?? 2000,
+            // 10s (vs the lib's 30s default): a revoked session is only detected
+            // when the next heartbeat frame carries the stale API key and the
+            // server closes with 1008, so this bounds worst-case sign-out latency.
+            heartbeatInterval: 10000,
             subscriptionTimeout: 10000,
         });
+
+        // Sign out on WS 1008 (policy violation = revocation / ban).
+        this.wsClient.onAuthFailure(() => signOut('session_ended'));
+
+        // Re-check subscriptions on every auto-reconnect so that a disabled
+        // account (WS closes 1000, client reconnects) surfaces as 'degraded'
+        // rather than staying 'connected' after the socket comes back up.
+        // Only notify 'subscriptions_confirmed' (which flips the indicator to
+        // 'connected') once autoSubscribe() has actually settled and nothing
+        // failed — if something failed, notifySubscriptionDegraded() already
+        // fired 'subscription_degraded', which drives 'degraded'.
+        if (this.config.websocket.autoSubscribe) {
+            this.wsClient.onReconnect(() => {
+                void this.autoSubscribe().then(() => {
+                    if (!this.wsClient) return; // torn down mid-flight
+                    if (!this.degraded) {
+                        this.wsClient.getSubscriptions().notify('subscriptions_confirmed', {});
+                    }
+                });
+            });
+        }
 
         await this.wsClient.connect();
         this.log.info('WebSocket connected');
 
-        // Auto-subscribe to configured channels
+        // Auto-subscribe to configured channels (initial connect only;
+        // reconnects are handled by the onReconnect listener above).
         if (this.config.websocket.autoSubscribe) {
             await this.autoSubscribe();
         }
@@ -161,6 +196,10 @@ export class TradeServerClient {
      */
     disconnect(): void {
         this.stopTokenRefresh();
+        // Drop the closure capturing this instance so a torn-down client can't
+        // still be invoked as the axios refresh probe (e.g. app re-init without
+        // a full page reload).
+        setRefreshProbeHandler(null);
         if (this.wsClient) {
             this.wsClient.disconnect();
             this.wsClient = null;
@@ -171,6 +210,10 @@ export class TradeServerClient {
     /**
      * Schedule a single token refresh to fire SAFETY_MARGIN before expiry.
      * Replaces any previously scheduled timer.
+     *
+     * @param expirationMicros - Token expiration as Unix epoch in **microseconds**
+     *   (as returned by `ApiToken.expiration`). Not milliseconds — do not pass
+     *   `Date.now()` here.
      */
     private scheduleTokenRefresh(expirationMicros: number): void {
         const expirationMs = Math.floor(expirationMicros / 1000);
@@ -179,34 +222,48 @@ export class TradeServerClient {
         if (this.refreshTimer) {
             clearTimeout(this.refreshTimer);
         }
-        this.refreshTimer = setTimeout(() => void this.runScheduledRefresh(), delayMs);
+        this.refreshTimer = setTimeout(() => void this.refreshNow(), delayMs);
         this.log.info(
             `Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`
         );
     }
 
     /**
-     * Perform a token refresh. Re-entry guard makes it safe to call from both
-     * the scheduled timer and the visibilitychange listener.
-     *
-     * On failure (network, 401, anything): sign the user out — chosen
-     * behaviour per the design (single-shot, no retries).
+     * Coalesced refresh entry point. All callers (scheduled timer, visibility
+     * listener, 401/403/502 probe) share a single in-flight Promise<boolean>.
+     * Returns true if the refresh succeeded, false if it failed (sign-out fired).
      */
-    private async runScheduledRefresh(): Promise<void> {
-        if (this.isRefreshing) {
-            this.log.debug('Refresh already in flight; skipping re-entry');
-            return;
+    private refreshNow(): Promise<boolean> {
+        if (this.refreshInFlight) {
+            this.log.debug('Refresh already in flight; sharing existing promise');
+            return this.refreshInFlight;
         }
-        this.isRefreshing = true;
-        try {
-            this.log.info('Refreshing token...');
-            const token = await this.auth.refreshToken();
+        this.refreshInFlight = this.doRefresh().finally(() => {
+            this.refreshInFlight = null;
+        });
+        return this.refreshInFlight;
+    }
 
-            // If the user disconnected during the in-flight refresh, drop the
-            // result rather than persisting and rescheduling on a dead client.
+    /**
+     * Perform a single-attempt token refresh. Any error signs the user out
+     * immediately — callers (the axios probe) surface a "try again" toast
+     * on success rather than the original request being auto-resent.
+     */
+    private async doRefresh(): Promise<boolean> {
+        try {
+            this.log.info('Refreshing token…');
+            const token = await this.auth.refreshToken();
+            if (!token) {
+                throw new Error('Empty response from /refresh');
+            }
+
+            // If disconnect() ran while refreshToken() was in flight (e.g. app
+            // teardown), wsClient is already null — drop the result rather than
+            // persisting a token and rescheduling a refresh timer that would
+            // resurrect background network activity after cleanup.
             if (!this.wsClient) {
                 this.log.debug('Disconnected during refresh; dropping result');
-                return;
+                return false;
             }
 
             persistApiToken(token);
@@ -215,11 +272,18 @@ export class TradeServerClient {
             this.log.info(
                 `Token refreshed (new expiration ${new Date(Math.floor(token.expiration / 1000)).toISOString()})`
             );
+            return true;
         } catch (err) {
+            // Same rationale as the success-path check above: disconnect() may
+            // have already run while refreshToken() was in flight, in which case
+            // this failure isn't a real auth problem — don't redirect to sign-in.
+            if (!this.wsClient) {
+                this.log.debug('Disconnected during refresh failure; skipping sign-out');
+                return false;
+            }
             this.log.error('Token refresh failed, signing out:', err);
-            signOut();
-        } finally {
-            this.isRefreshing = false;
+            signOut('session_ended');
+            return false;
         }
     }
 
@@ -247,7 +311,7 @@ export class TradeServerClient {
             const expirationMs = Math.floor(expiration / 1000);
             if (expirationMs - Date.now() <= TOKEN_REFRESH_SAFETY_MARGIN_MS) {
                 this.log.debug('Tab visible and within refresh margin; refreshing now');
-                void this.runScheduledRefresh();
+                void this.refreshNow();
             }
         };
         document.addEventListener('visibilitychange', this.visibilityListener);
@@ -287,6 +351,77 @@ export class TradeServerClient {
     }
 
     /**
+     * Subscribe to live connection state changes.
+     * States: 'connected' | 'reconnecting' | 'disconnected' | 'degraded'.
+     * 'degraded' = socket open but one or more channel subscriptions were refused.
+     * Returns a disposer. Must be called after connect().
+     */
+    onConnectionStateChange(
+        cb: (state: 'connected' | 'reconnecting' | 'disconnected' | 'degraded') => void
+    ): () => void {
+        if (!this.wsClient) {
+            throw new Error('WebSocket not connected. Call connect() first.');
+        }
+        const subs = this.wsClient.getSubscriptions();
+        // Raw transport 'connected' events fire on every socket open, including
+        // reconnects. On a reconnect, don't forward it yet — the socket being
+        // open doesn't mean channel subscriptions succeeded (e.g. a disabled
+        // account reconnects fine but every subscribe is refused). Wait for
+        // 'subscriptions_confirmed', which TradeServerClient emits once
+        // autoSubscribe() actually succeeds after a reconnect (see connect()).
+        const onConnected = (data: unknown) => {
+            const { reconnect } = (data ?? {}) as { reconnect?: boolean };
+            if (!reconnect) cb('connected');
+        };
+        const onSubscriptionsConfirmed = () => cb('connected');
+        const onReconnecting = () => cb('reconnecting');
+        // Raw transport close — covers autoReconnect being disabled, so the UI
+        // doesn't stay stuck on a stale state. When a reconnect *is* about to
+        // be scheduled, 'reconnecting' follows immediately after, which is an
+        // accurate reflection of what's actually happening.
+        const onDisconnected = () => cb('disconnected');
+        const onDegraded = () => cb('degraded');
+        subs.subscribe('connected', onConnected);
+        subs.subscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
+        subs.subscribe('reconnecting', onReconnecting);
+        subs.subscribe('disconnected', onDisconnected);
+        subs.subscribe('subscription_degraded', onDegraded);
+
+        // Replay: autoSubscribe() runs (and may already have failed a channel)
+        // before connect() resolves, i.e. before any caller can have subscribed.
+        if (this.degraded) cb('degraded');
+
+        return () => {
+            subs.unsubscribe('connected', onConnected);
+            subs.unsubscribe('subscriptions_confirmed', onSubscriptionsConfirmed);
+            subs.unsubscribe('reconnecting', onReconnecting);
+            subs.unsubscribe('disconnected', onDisconnected);
+            subs.unsubscribe('subscription_degraded', onDegraded);
+        };
+    }
+
+    /**
+     * Reset the reconnect counter and attempt a fresh connection immediately,
+     * without waiting for the next scheduled retry.
+     * Must be called after connect().
+     */
+    reconnect(): void {
+        if (!this.wsClient) {
+            throw new Error('WebSocket not connected. Call connect() first.');
+        }
+        this.wsClient.reconnect();
+    }
+
+    /**
+     * Emit a 'subscription_degraded' event so the connection indicator can
+     * show "Server is live, but there's no data" when channels are refused.
+     */
+    private notifySubscriptionDegraded(channel: string): void {
+        this.degraded = true;
+        this.wsClient?.getSubscriptions().notify('subscription_degraded', { channel });
+    }
+
+    /**
      * Auto-subscribe to configured channels
      */
     private async autoSubscribe(): Promise<void> {
@@ -294,49 +429,57 @@ export class TradeServerClient {
             return;
         }
 
+        this.degraded = false;
         const { autoSubscribe } = this.config.websocket;
         const subscriptions: Promise<unknown>[] = [];
 
         if (autoSubscribe.orders) {
             this.log.debug('Auto-subscribing to orders channel');
             subscriptions.push(
-                this.subscribeToOrders({ snapshot: true }).catch((err) =>
-                    this.log.error('Failed to subscribe to orders', err)
-                )
+                this.subscribeToOrders({ snapshot: true }).catch((err) => {
+                    this.log.error('Failed to subscribe to orders', err);
+                    this.notifySubscriptionDegraded('orders');
+                })
             );
         }
 
         if (autoSubscribe.positions) {
             this.log.debug('Auto-subscribing to positions channel');
             subscriptions.push(
-                this.subscribeToPositions({ snapshot: true, sendPriceUpdates: true }).catch((err) =>
-                    this.log.error('Failed to subscribe to positions', err)
-                )
+                this.subscribeToPositions({ snapshot: true, sendPriceUpdates: true }).catch((err) => {
+                    this.log.error('Failed to subscribe to positions', err);
+                    this.notifySubscriptionDegraded('positions');
+                })
             );
         }
 
         if (autoSubscribe.balances) {
             this.log.debug('Auto-subscribing to balances channel');
             subscriptions.push(
-                this.subscribeToBalances({ snapshot: true }).catch((err) =>
-                    this.log.error('Failed to subscribe to balances', err)
-                )
+                this.subscribeToBalances({ snapshot: true }).catch((err) => {
+                    this.log.error('Failed to subscribe to balances', err);
+                    this.notifySubscriptionDegraded('balances');
+                })
             );
         }
 
         if (autoSubscribe.accountStates) {
             this.log.debug('Auto-subscribing to account states channel');
             subscriptions.push(
-                this.subscribeToAccountStates({ snapshot: true }).catch((err) =>
-                    this.log.error('Failed to subscribe to account states', err)
-                )
+                this.subscribeToAccountStates({ snapshot: true }).catch((err) => {
+                    this.log.error('Failed to subscribe to account states', err);
+                    this.notifySubscriptionDegraded('states');
+                })
             );
         }
 
         if (autoSubscribe.trades) {
             this.log.debug('Auto-subscribing to trades channel');
             subscriptions.push(
-                this.subscribeToTrades().catch((err) => this.log.error('Failed to subscribe to trades', err))
+                this.subscribeToTrades().catch((err) => {
+                    this.log.error('Failed to subscribe to trades', err);
+                    this.notifySubscriptionDegraded('trades');
+                })
             );
         }
 
@@ -442,7 +585,7 @@ export class TradeServerClient {
      */
     async unsubscribeFromCandles(symbol: string, interval: CandleInterval): Promise<unknown> {
         const params: CandlesSubscriptionParams = { s: symbol, i: interval };
-        return this.websocket.unsubscribeFromChannel('ohlc', params as unknown as Record<string, unknown>);
+        return this.websocket.unsubscribeFromChannel('ohlc', params as unknown as Record<string, unknown>, false);
     }
 
     /**

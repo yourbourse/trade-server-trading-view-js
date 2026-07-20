@@ -302,6 +302,10 @@ export type Symbol = {
      */
     ex?: string;
     /**
+     * Industry tag.
+     */
+    it?: string;
+    /**
      * Pricing decimal precision.
      */
     dp: number;
@@ -473,6 +477,110 @@ export type Symbol = {
      * Swap charge interval. When set to `EndOfDay`, swap is charged once at the end of the trading day and `swSt` field is not included. When set to an intraday value, swap is charged at regular intervals starting from the time specified in `swSt`.
      */
     swI: 'EndOfDay' | 'IntradayOncePerFullDay' | 'IntradayTwicePerFullDay' | 'IntradayThreeTimesPerFullDay' | 'IntradayFourTimesPerFullDay';
+    /**
+     * Margin calculation mode.
+     */
+    mcm: 'Forex' | 'CFD' | 'Futures' | 'CFDIndex' | 'CFDLeverage' | 'Currency' | 'Collateral' | 'ExchangeStocks' | 'ExchangeBonds';
+    /**
+     * Profit calculation mode.
+     */
+    pcm: 'Forex' | 'CFD' | 'Futures' | 'Currency' | 'Collateral';
+    /**
+     * Margin percentage multiplier applied to every formula (100 = no change).
+     */
+    pct: number;
+    /**
+     * Hedged margin fraction charged for the hedged portion (0.0–1.0).
+     */
+    hm: number;
+    /**
+     * Per-lot initial margin. Used in Futures mode only.
+     */
+    im: number;
+    /**
+     * Per-lot maintenance margin. Used in Futures mode only.
+     */
+    mm: number;
+    /**
+     * Liquidity margin rate. Asset contribution to equity in Currency/Collateral mode.
+     */
+    lmr: number;
+    /**
+     * Initial margin rate for buy market orders and open buy positions.
+     */
+    mrIB: number;
+    /**
+     * Initial margin rate for sell market orders and open sell positions.
+     */
+    mrIS: number;
+    /**
+     * Initial margin rate for pending buy limit orders.
+     */
+    mrIBl: number;
+    /**
+     * Initial margin rate for pending sell limit orders.
+     */
+    mrISl: number;
+    /**
+     * Initial margin rate for pending buy stop orders.
+     */
+    mrIBt: number;
+    /**
+     * Initial margin rate for pending sell stop orders.
+     */
+    mrISt: number;
+    /**
+     * Initial margin rate for pending buy stop-limit orders.
+     */
+    mrIBtl: number;
+    /**
+     * Initial margin rate for pending sell stop-limit orders.
+     */
+    mrIStl: number;
+    /**
+     * Maintenance margin rate for open buy positions.
+     */
+    mrMB: number;
+    /**
+     * Maintenance margin rate for open sell positions.
+     */
+    mrMS: number;
+    /**
+     * Maintenance margin rate for pending buy limit orders.
+     */
+    mrMBl: number;
+    /**
+     * Maintenance margin rate for pending sell limit orders.
+     */
+    mrMSl: number;
+    /**
+     * Maintenance margin rate for pending buy stop orders.
+     */
+    mrMBt: number;
+    /**
+     * Maintenance margin rate for pending sell stop orders.
+     */
+    mrMSt: number;
+    /**
+     * Maintenance margin rate for pending buy stop-limit orders.
+     */
+    mrMBtl: number;
+    /**
+     * Maintenance margin rate for pending sell stop-limit orders.
+     */
+    mrMStl: number;
+    /**
+     * Use the larger leg for hedged margin calculation.
+     */
+    mll: boolean;
+    /**
+     * Recalculate margin rates at end of day.
+     */
+    reod: boolean;
+    /**
+     * Check margin before executing SL/TP orders.
+     */
+    mchk: boolean;
 };
 
 export type SymbolCollection = {
@@ -1197,13 +1305,17 @@ export type SuccessResponse = {
 /**
  * Health check
  *
- * Health check (returns server version and current time).
+ * Health check (returns server version, current time, and server timezone).
  */
 export type Now = {
     /**
-     * Current server time (UTC).
+     * Current server time in UTC.
      */
     now: string;
+    /**
+     * Server's configured timezone (IANA timezone name).
+     */
+    timezone: string;
     /**
      * Server version.
      */
