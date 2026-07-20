@@ -419,13 +419,12 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public chartContextMenuActions(
         context: TradeContext,
-        _options?: DefaultContextMenuActionsParams | undefined
+        options?: DefaultContextMenuActionsParams | undefined
     ): Promise<ActionMetaInfo[]> {
-        void _options;
         if (context.symbol) {
             this.resetOrderTypeToMarket(context.symbol);
         }
-        return this.host.defaultContextMenuActions(context);
+        return this.host.defaultContextMenuActions(context, options);
     }
 
     async closePosition(positionId: string, amount?: number, confirmId?: string): Promise<void> {
