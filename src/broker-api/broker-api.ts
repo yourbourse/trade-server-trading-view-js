@@ -32,7 +32,10 @@ import {
     UpdateService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
-import { applyMarketOrderTypeDefault } from '@/utils/tradingOrderDefaults.js';
+import {
+    applyDurationDefaults,
+    applyMarketOrderTypeDefault,
+} from '@/utils/tradingOrderDefaults.js';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -329,13 +332,33 @@ export class BrokerApi extends AbstractBrokerMinimal {
         return this.accountService.getAccountsMetainfo();
     }
 
-    /** Reset persisted order ticket type to Market for the given symbol. */
+    /**
+     * Reset persisted order ticket defaults for the symbol:
+     * order type → Market; Time in Force → IOC for Market, GTC otherwise
+     * (falling back to the next symbol-allowed, order-type-compatible duration).
+     */
     public resetOrderTypeToMarket(symbol: string): void {
         applyMarketOrderTypeDefault(symbol, this.host);
+        // Apply preferred TIFs immediately so the ticket does not briefly show a stale duration
+        // while symbolInfo (allowedDurations) is loading; refine when the symbol filter arrives.
+        applyDurationDefaults(symbol, undefined, this.host);
+        void this.refineDurationDefaultsForSymbol(symbol);
+    }
+
+    private async refineDurationDefaultsForSymbol(symbol: string): Promise<void> {
+        try {
+            const info = await this.symbolInfo(symbol);
+            if (info.allowedDurations?.length) {
+                applyDurationDefaults(symbol, info.allowedDurations, this.host);
+            }
+        } catch {
+            // Keep the sync broker-config defaults already applied above.
+        }
     }
 
     /**
-     * Keep the order ticket on Market by default (TradingView otherwise remembers the last type).
+     * Keep the order ticket on Market + preferred TIF by default
+     * (TradingView otherwise remembers the last selections).
      * Idempotent: a second call tears down the previous subscription before re-subscribing.
      */
     public setupMarketOrderTypeDefaults(getSymbol: () => string | undefined): void {

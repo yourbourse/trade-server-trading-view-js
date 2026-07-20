@@ -12,7 +12,6 @@ import {
 } from 'charting_library/charting_library.js';
 import type {
     BrokerConfigFlags,
-    OrderDurationMetaInfo,
     TradingTerminalWidgetOptions,
 } from 'charting_library/charting_library.js';
 
@@ -24,7 +23,7 @@ import { BrokerApi } from './broker-api/broker-api.js';
 import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
 import { displayVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
-import { OrderType } from './broker-api/types.js';
+import { BROKER_ORDER_DURATIONS } from './utils/orderDurationConfig.js';
 
 const logger = createLogger({ prefix: '[App]' });
 
@@ -337,37 +336,8 @@ class TradingApp {
             },
             broker_config: {
                 configFlags: brokerConfigFlags,
-                durations: [
-                    {
-                        value: 'day',
-                        name: 'DAY',
-                        description: 'Day Order',
-                    },
-                    {
-                        value: 'gtc',
-                        name: 'GTC',
-                        description: 'Good Till Cancelled',
-                        default: true,
-                    },
-                    {
-                        value: 'ioc',
-                        name: 'IOC',
-                        description: 'Immediate or Cancel',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
-                    },
-                    {
-                        value: 'fok',
-                        name: 'FOK',
-                        description: 'Fill or Kill',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
-                    },
-                    {
-                        value: 'gtd',
-                        name: 'GTD',
-                        hasDatePicker: true,
-                        hasTimePicker: true,
-                    },
-                ] as OrderDurationMetaInfo[],
+                // Preferred TIF: Market → IOC; Limit/Stop/StopLimit → GTC (see orderDurationConfig).
+                durations: BROKER_ORDER_DURATIONS,
             },
         };
 
