@@ -242,12 +242,15 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
             if (cached && order.qty !== cached.qty) {
                 const message =
-                    'Quantity cannot be changed for stop loss / take profit orders — it always matches the position quantity.';
+                    'Quantity cannot be changed for stop loss / take profit orders — it always matches the parent order/position quantity.';
                 notificationService.error('Unable to modify order', message);
                 throw new Error(message);
             }
 
-            if (cached && order.duration?.type !== cached.duration?.type) {
+            if (
+                cached &&
+                (order.duration?.type !== cached.duration?.type || order.duration?.datetime !== cached.duration?.datetime)
+            ) {
                 const message = 'Time in force cannot be changed for stop loss / take profit orders.';
                 notificationService.error('Unable to modify order', message);
                 throw new Error(message);
