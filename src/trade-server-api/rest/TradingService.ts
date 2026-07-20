@@ -38,9 +38,19 @@ import { executeAuthenticatedRequest, executeAuthenticatedDeleteWithPath } from 
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
 
+/** Positions change via WS; short TTL only collapses parallel broker init fetches. */
+const POSITIONS_CACHE_TTL_MS = 2_000;
+
+interface PositionsCacheEntry {
+    data: PositionsCollection;
+    expiresAt: number;
+}
+
 export class TradingService {
     private user: AuthUser;
     private log = logger.child('TradingService');
+    private readonly positionsCache = new Map<string, PositionsCacheEntry>();
+    private readonly positionsInFlight = new Map<string, Promise<PositionsCollection | undefined>>();
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -65,6 +75,8 @@ export class TradingService {
      */
     async placeOrder(order: PlaceOrder): Promise<Order | undefined> {
         this.log.info(`Placing order:`, order);
+        // Market orders can open/close positions immediately; drop stale snapshots.
+        this.invalidatePositionsCache();
         return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
     }
 
@@ -200,10 +212,59 @@ export class TradingService {
     /**
      * Get open positions
      * POST /positions
+     *
+     * Concurrent requests with the same filter/token coalesce onto one in-flight HTTP call.
      */
     async getPositions(
         filter: OpenPositionRequestFilter = {},
         nextToken: string | null = null
+    ): Promise<PositionsCollection | undefined> {
+        const cacheKey = this.positionsCacheKey(filter, nextToken);
+
+        const cached = this.positionsCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            this.log.debug('Positions cache hit');
+            return cached.data;
+        }
+
+        const existingRequest = this.positionsInFlight.get(cacheKey);
+        if (existingRequest) {
+            this.log.debug('Positions in-flight reuse');
+            return existingRequest;
+        }
+
+        const request = this.fetchPositions(filter, nextToken)
+            .then((data) => {
+                // undefined means the request failed and the error was swallowed
+                // by the interceptor; don't cache it, let the next caller retry.
+                if (data !== undefined) {
+                    this.positionsCache.set(cacheKey, {
+                        data,
+                        expiresAt: Date.now() + POSITIONS_CACHE_TTL_MS,
+                    });
+                }
+                return data;
+            })
+            .finally(() => {
+                this.positionsInFlight.delete(cacheKey);
+            });
+
+        this.positionsInFlight.set(cacheKey, request);
+        return request;
+    }
+
+    /** Drop cached snapshots after any mutation that can change open positions. */
+    private invalidatePositionsCache(): void {
+        this.positionsCache.clear();
+    }
+
+    private positionsCacheKey(filter: OpenPositionRequestFilter, nextToken: string | null): string {
+        return `${JSON.stringify(filter)}:${nextToken ?? ''}`;
+    }
+
+    private async fetchPositions(
+        filter: OpenPositionRequestFilter,
+        nextToken: string | null
     ): Promise<PositionsCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, sdkGetPositions, filter, extraHeaders);
@@ -258,6 +319,8 @@ export class TradingService {
         takeProfit: number | null = null
     ): Promise<ModifySltpResult | undefined> {
         this.log.info(`Modifying position SL/TP: ${positionId}`);
+        // SL/TP is part of the position snapshot; drop stale cache entries.
+        this.invalidatePositionsCache();
         const body: ModifyPositionSltp = { id: positionId };
         if (stopLoss !== null) {
             body.sl = stopLoss;

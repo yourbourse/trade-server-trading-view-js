@@ -4,7 +4,14 @@
  */
 
 import { CandleInterval } from '../../schema/public-api/types.gen.js';
-import type { Symbol, SymbolCollection, Book, TradeCollection, ConversionRate } from '../../schema/public-api/types.gen.js';
+import type {
+    Symbol,
+    SymbolCollection,
+    Book,
+    TradeCollection,
+    ConversionRate,
+    Quote,
+} from '../../schema/public-api/types.gen.js';
 import {
     getSymbols,
     getSymbol,
@@ -20,9 +27,29 @@ import type { TracingHeaders } from '../../utils/traceContext.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
 
+/** Symbol specs are stable for a session; keep long enough to collapse TV's parallel lookups. */
+const SYMBOL_INFO_CACHE_TTL_MS = 5 * 60_000;
+
+/** Quotes move fast; short TTL only collapses TV's parallel getQuotes bursts at startup. */
+const TICKER_CACHE_TTL_MS = 2_000;
+
+interface SymbolInfoCacheEntry {
+    data: Symbol;
+    expiresAt: number;
+}
+
+interface TickerCacheEntry {
+    data: Quote;
+    expiresAt: number;
+}
+
 export class MarketDataService {
     private user: AuthUser;
     private log = logger.child('MarketDataService');
+    private readonly symbolInfoCache = new Map<string, SymbolInfoCacheEntry>();
+    private readonly symbolInfoInFlight = new Map<string, Promise<Symbol>>();
+    private readonly tickerCache = new Map<string, TickerCacheEntry>();
+    private readonly tickerInFlight = new Map<string, Promise<Quote>>();
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -31,8 +58,50 @@ export class MarketDataService {
     /**
      * Get symbol configuration
      * GET /symbols/get/{symbolName}
+     *
+     * Shared across datafeed + broker callers. Concurrent requests for the same
+     * symbol/locale coalesce onto one in-flight HTTP call.
      */
     async getSymbolInfo(symbol: string, locale: string = 'en', ifNoneMatch: string | null = null): Promise<Symbol> {
+        // Conditional requests must hit the network; skip shared cache.
+        if (ifNoneMatch) {
+            return this.fetchSymbolInfo(symbol, locale, ifNoneMatch);
+        }
+
+        const cacheKey = `${locale}:${symbol}`;
+        const cached = this.symbolInfoCache.get(cacheKey);
+        if (cached && cached.expiresAt > Date.now()) {
+            this.log.debug(`Symbol info cache hit: ${symbol}`);
+            return cached.data;
+        }
+
+        const existingRequest = this.symbolInfoInFlight.get(cacheKey);
+        if (existingRequest) {
+            this.log.debug(`Symbol info in-flight reuse: ${symbol}`);
+            return existingRequest;
+        }
+
+        const request = this.fetchSymbolInfo(symbol, locale, null)
+            .then((data) => {
+                this.symbolInfoCache.set(cacheKey, {
+                    data,
+                    expiresAt: Date.now() + SYMBOL_INFO_CACHE_TTL_MS,
+                });
+                return data;
+            })
+            .finally(() => {
+                this.symbolInfoInFlight.delete(cacheKey);
+            });
+
+        this.symbolInfoInFlight.set(cacheKey, request);
+        return request;
+    }
+
+    private async fetchSymbolInfo(
+        symbol: string,
+        locale: string,
+        ifNoneMatch: string | null
+    ): Promise<Symbol> {
         this.log.debug(`Fetching symbol info: ${symbol}`);
         const headers: Record<string, unknown> = {
             ...getGETHeaders(this.user),
@@ -106,8 +175,39 @@ export class MarketDataService {
     /**
      * Get current ticker/quote (top of the book)
      * GET /quote/{symbolName}
+     *
+     * Concurrent requests for the same symbol coalesce onto one in-flight HTTP call.
      */
-    async getTicker(symbol: string) {
+    async getTicker(symbol: string): Promise<Quote> {
+        const cached = this.tickerCache.get(symbol);
+        if (cached && cached.expiresAt > Date.now()) {
+            this.log.debug(`Ticker cache hit: ${symbol}`);
+            return cached.data;
+        }
+
+        const existingRequest = this.tickerInFlight.get(symbol);
+        if (existingRequest) {
+            this.log.debug(`Ticker in-flight reuse: ${symbol}`);
+            return existingRequest;
+        }
+
+        const request = this.fetchTicker(symbol)
+            .then((data) => {
+                this.tickerCache.set(symbol, {
+                    data,
+                    expiresAt: Date.now() + TICKER_CACHE_TTL_MS,
+                });
+                return data;
+            })
+            .finally(() => {
+                this.tickerInFlight.delete(symbol);
+            });
+
+        this.tickerInFlight.set(symbol, request);
+        return request;
+    }
+
+    private async fetchTicker(symbol: string): Promise<Quote> {
         this.log.debug(`Fetching ticker: ${symbol}`);
         const headers = getGETHeaders(this.user);
         const response = await getTob({
@@ -115,6 +215,11 @@ export class MarketDataService {
             headers,
             path: { symbolName: symbol },
         });
+
+        if (!response.data) {
+            throw new Error(`Failed to fetch ticker for ${symbol}`);
+        }
+
         return response.data;
     }
 
