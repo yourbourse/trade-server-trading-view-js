@@ -123,7 +123,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     .filter((symbol: Symbol) => {
                         const searchTerm = userInput.toLowerCase();
                         return (
-                            symbol.n?.toLowerCase().includes(searchTerm) || symbol.d?.toLowerCase().includes(searchTerm)
+                            symbol.n?.toLowerCase().includes(searchTerm) ||
+                            symbol.d?.toLowerCase().includes(searchTerm) ||
+                            symbol.it?.toLowerCase().includes(searchTerm)
                         );
                     })
                     .map((symbol: Symbol) => ({
