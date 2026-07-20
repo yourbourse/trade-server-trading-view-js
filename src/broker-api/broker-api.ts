@@ -283,6 +283,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             this.host.orderUpdate?.(cachedOrders[index]!);
         } else {
             logger.warn('modifyOrder: order missing from cache after update, forcing full refresh', order.id);
+            this.orderService.clearCache();
             this.host.ordersFullUpdate?.();
         }
     }
@@ -300,6 +301,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (!updatedPosition) {
             logger.warn('editPositionBrackets: position missing from cache after update, forcing full refresh', positionId);
+            this.positionService.clearCache();
             this.host.positionsFullUpdate?.();
             return;
         }
