@@ -10,6 +10,7 @@ import {
     IBrokerConnectionAdapterHost,
     InstrumentInfo,
     IsTradableResult,
+    IWatchedValue,
     Order,
     PlaceOrderResult,
     Position,
@@ -64,6 +65,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private updateService: UpdateService;
+    /** Watched value instance we subscribed to (must match for reliable unsubscribe). */
+    private orderPanelVisibility: IWatchedValue<boolean> | null = null;
     private orderPanelVisibilityHandler: ((visible: boolean) => void) | null = null;
     private currencyConversionService: CurrencyConversionService;
 
@@ -382,13 +385,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
      * Idempotent: a second call tears down the previous subscription before re-subscribing.
      */
     public setupMarketOrderTypeDefaults(getSymbol: () => string | undefined): void {
-        const orderPanelVisibility = this.host.orderPanelVisibility?.();
-
-        // Tear down any previous subscription to avoid accumulation.
-        if (this.orderPanelVisibilityHandler && orderPanelVisibility) {
-            orderPanelVisibility.unsubscribe(this.orderPanelVisibilityHandler);
-            this.orderPanelVisibilityHandler = null;
-        }
+        this.teardownMarketOrderTypeDefaults();
 
         const applyForActiveSymbol = () => {
             const symbol = getSymbol();
@@ -399,22 +396,25 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         applyForActiveSymbol();
 
+        const orderPanelVisibility = this.host.orderPanelVisibility?.() ?? null;
         if (orderPanelVisibility) {
             this.orderPanelVisibilityHandler = (visible: boolean) => {
                 if (visible) {
                     applyForActiveSymbol();
                 }
             };
+            this.orderPanelVisibility = orderPanelVisibility;
             orderPanelVisibility.subscribe(this.orderPanelVisibilityHandler);
         }
     }
 
     /** Tear down subscriptions set up by {@link setupMarketOrderTypeDefaults}. */
     public teardownMarketOrderTypeDefaults(): void {
-        if (this.orderPanelVisibilityHandler) {
-            this.host.orderPanelVisibility?.()?.unsubscribe(this.orderPanelVisibilityHandler);
-            this.orderPanelVisibilityHandler = null;
+        if (this.orderPanelVisibility && this.orderPanelVisibilityHandler) {
+            this.orderPanelVisibility.unsubscribe(this.orderPanelVisibilityHandler);
         }
+        this.orderPanelVisibility = null;
+        this.orderPanelVisibilityHandler = null;
     }
 
     public chartContextMenuActions(

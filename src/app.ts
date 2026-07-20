@@ -447,7 +447,7 @@ class TradingApp {
             }
             if (this.symbolChangedHandler) {
                 try {
-                    this.widget.activeChart().onSymbolChanged().unsubscribeAll(null);
+                    this.widget.activeChart().onSymbolChanged().unsubscribe(null, this.symbolChangedHandler);
                 } catch {
                     // chart may already be torn down
                 }
