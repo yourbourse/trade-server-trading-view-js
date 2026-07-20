@@ -123,16 +123,17 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     .filter((symbol: Symbol) => {
                         const searchTerm = userInput.toLowerCase();
                         return (
-                            symbol.n?.toLowerCase().includes(searchTerm) || symbol.d?.toLowerCase().includes(searchTerm)
+                            symbol.n?.toLowerCase().includes(searchTerm) ||
+                            symbol.d?.toLowerCase().includes(searchTerm) ||
+                            symbol.it?.toLowerCase().includes(searchTerm)
                         );
                     })
                     .map((symbol: Symbol) => ({
                         symbol: symbol.n,
                         full_name: symbol.n,
                         description: symbol.d,
-                        //TODO: these 2 below field should be got from public api in the future
-                        exchange: '',
-                        type: '',
+                        exchange: symbol.ex ?? '',
+                        type: symbol.it ?? '',
                     }));
 
                 onResultReadyCallback(filteredSymbols);
