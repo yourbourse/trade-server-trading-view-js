@@ -38,7 +38,7 @@ export function validateOrderPrices(fields: OrderPriceFields): string | null {
         }
 
         if (!Number.isFinite(value) || value <= 0) {
-            return `${FIELD_LABELS[field]} must be greater than 0`;
+            return `${FIELD_LABELS[field]} must be a finite number greater than 0`;
         }
     }
 
