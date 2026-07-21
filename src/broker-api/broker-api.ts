@@ -130,16 +130,15 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // tv = monetary value of 1 tick move per lot, expressed in the symbol's
         // *profit* currency (symbolConfig.p). Divide by lotSize to get per-unit value.
         const lotSize = symbolConfig.l;
-        // Fallback follows TradingView's formula: pipSize * pointValue * accountCurrencyRate
-        // with pointValue=1, accountCurrencyRate=1 → pipValue = pipSize = mintick.
-        // Using 1 as fallback causes TradingView to display astronomical P&L on brackets
-        // because it multiplies pipValue × qty × lotSize internally.
+        // When tv is missing, fall back to mintick (TradingView: pipSize * pointValue
+        // with pointValue=1).
         const rawPipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
 
         // TradingView InstrumentInfo spec:
         // - pipValue: account currency (used for bracket P&L / Order Ticket)
         // - bigPointValue: contract currency (used for "Total Value (symbol currency)")
         // When profit currency differs from account currency, convert pipValue only.
+        // getRate returns 0 on failure → pipValue 0 (TV Money shows 0.00).
         const profitCurrency = symbolConfig.p;
         await this.accountService.ensureAccountDataLoaded();
         const accountCurrency = this.accountService.getAccountCurrency();
