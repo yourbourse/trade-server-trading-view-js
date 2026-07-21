@@ -23,6 +23,11 @@ import { AbstractBrokerMinimal } from './abstract-broker-minimal';
 import { ConnectionStatus, OrderType, ParentType, Side } from './types';
 import { validateOrderPrices, type OrderPriceFields } from './lib/validateOrderPrices';
 
+/** Synchronous bid/ask lookup needed for order price validation; Datafeed implements this. */
+interface QuoteSource {
+    getCachedQuote(symbol: string): { bid?: number; ask?: number };
+}
+
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
 import {
@@ -56,6 +61,7 @@ const logger = createLogger({ prefix: '[BrokerAPI]' });
  */
 export class BrokerApi extends AbstractBrokerMinimal {
     private api: TradeServerClient;
+    private quoteSource: QuoteSource;
     private orderService: OrderService;
     private positionService: PositionService;
     private tradeHistoryService: TradeHistoryService;
@@ -66,11 +72,12 @@ export class BrokerApi extends AbstractBrokerMinimal {
     public constructor(
         tradeServerClient: TradeServerClient,
         host: IBrokerConnectionAdapterHost,
-        quotesProvider: IDatafeedQuotesApi
+        quotesProvider: IDatafeedQuotesApi & QuoteSource
     ) {
         super(host, quotesProvider);
 
         this.api = tradeServerClient;
+        this.quoteSource = quotesProvider;
 
         notificationService.initialize((title: string, text: string, notificationType?: number) => {
             this.host.showNotification(title, text, notificationType);
@@ -216,7 +223,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     public async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {
-        this.assertValidOrderPrices(preOrder);
+        this.assertValidOrderPrices(preOrder.symbol, preOrder.side, preOrder.type, preOrder);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.host.setAccountManagerVisibilityMode('normal' as any);
@@ -236,8 +243,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {
         void _confirmId;
 
-        this.assertValidOrderPrices(order);
-
+        // A chart-line drag on a position's bracket arrives here as an Order carrying the
+        // *opposite* side of the position (see OrderService.ensurePositionBracketOrders), so it
+        // must be validated as a position bracket (against the position's own side), not as a
+        // standalone order using this order's side/type. Delegate before validating.
         const bracketOrder = order as Order & { parentId?: string; parentType?: number };
         if (
             bracketOrder.parentType === ParentType.Position &&
@@ -254,6 +263,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
             await this.editPositionBrackets(bracketOrder.parentId, brackets);
             return;
         }
+
+        this.assertValidOrderPrices(order.symbol, order.side, order.type, order);
 
         await this.orderService.modifyOrder(order);
 
@@ -273,7 +284,16 @@ export class BrokerApi extends AbstractBrokerMinimal {
     ): Promise<void> {
         void _customFields;
 
-        this.assertValidOrderPrices(brackets);
+        const position = await this.positionService.ensureCachedPosition(positionId);
+        if (!position) {
+            const message = `Position ${positionId} not found`;
+            notificationService.error('Unable to modify position brackets', message);
+            throw new Error(message);
+        }
+
+        // Brackets on an open position are validated like a Market order's SL/TP: directly
+        // against the live bid/ask, using the position's own side (not any order's side).
+        this.assertValidOrderPrices(position.symbol, position.side, OrderType.Market, brackets);
 
         const resolvedBrackets = await this.resolvePositionBrackets(positionId, brackets);
         await this.positionService.editPositionBrackets(positionId, resolvedBrackets);
@@ -293,12 +313,24 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     /**
-     * Reject non-positive/non-finite price fields before they reach the API. Covers the Order
-     * Ticket, chart-line drags, and the bracket dialog uniformly since all three call through
-     * placeOrder/modifyOrder/editPositionBrackets.
+     * Reject price fields that Trade Server's directional validation would reject, before they
+     * reach the API. Covers the Order Ticket, chart-line drags, and the bracket dialog uniformly
+     * since all three call through placeOrder/modifyOrder/editPositionBrackets.
      */
-    private assertValidOrderPrices(fields: OrderPriceFields): void {
-        const errorMessage = validateOrderPrices(fields);
+    private assertValidOrderPrices(
+        symbol: string,
+        side: Side,
+        orderType: OrderType,
+        fields: Pick<OrderPriceFields, 'limitPrice' | 'stopPrice' | 'stopLoss' | 'takeProfit'>
+    ): void {
+        const { bid, ask } = this.quoteSource.getCachedQuote(symbol);
+        const errorMessage = validateOrderPrices({
+            ...fields,
+            side,
+            orderType,
+            bidPrice: bid,
+            askPrice: ask,
+        });
         if (errorMessage) {
             notificationService.error('Invalid price', errorMessage);
             throw new Error(errorMessage);
