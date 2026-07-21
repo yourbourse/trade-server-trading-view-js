@@ -21,6 +21,7 @@ import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
 import { ConnectionStatus, OrderType, ParentType, Side } from './types';
+import { validateOrderPrices, type OrderPriceFields } from './lib/validateOrderPrices';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
@@ -215,6 +216,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     public async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {
+        this.assertValidOrderPrices(preOrder);
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.host.setAccountManagerVisibilityMode('normal' as any);
 
@@ -232,6 +235,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {
         void _confirmId;
+
+        this.assertValidOrderPrices(order);
 
         const bracketOrder = order as Order & { parentId?: string; parentType?: number };
         if (
@@ -268,6 +273,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     ): Promise<void> {
         void _customFields;
 
+        this.assertValidOrderPrices(brackets);
+
         const resolvedBrackets = await this.resolvePositionBrackets(positionId, brackets);
         await this.positionService.editPositionBrackets(positionId, resolvedBrackets);
 
@@ -283,6 +290,19 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const syncedOrders = this.orderService.syncBracketOrdersFromPosition(updatedPosition);
         syncedOrders.forEach((order) => this.host.orderUpdate?.(order));
+    }
+
+    /**
+     * Reject non-positive/non-finite price fields before they reach the API. Covers the Order
+     * Ticket, chart-line drags, and the bracket dialog uniformly since all three call through
+     * placeOrder/modifyOrder/editPositionBrackets.
+     */
+    private assertValidOrderPrices(fields: OrderPriceFields): void {
+        const error = validateOrderPrices(fields);
+        if (error) {
+            notificationService.error('Invalid price', error.message);
+            throw new Error(error.message);
+        }
     }
 
     /**
