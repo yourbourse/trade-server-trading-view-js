@@ -12,5 +12,8 @@ updates:
       groups:
           by-dependency:
               group-by: "dependency-name"
+      ignore:
+          - dependency-name: "eslint"
+            versions: ["10.x"]
       commit-message:
           prefix: ""
