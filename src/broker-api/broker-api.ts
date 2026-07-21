@@ -298,10 +298,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
      * placeOrder/modifyOrder/editPositionBrackets.
      */
     private assertValidOrderPrices(fields: OrderPriceFields): void {
-        const error = validateOrderPrices(fields);
-        if (error) {
-            notificationService.error('Invalid price', error.message);
-            throw new Error(error.message);
+        const errorMessage = validateOrderPrices(fields);
+        if (errorMessage) {
+            notificationService.error('Invalid price', errorMessage);
+            throw new Error(errorMessage);
         }
     }
 

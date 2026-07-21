@@ -12,11 +12,8 @@ export interface OrderPriceFields {
     stopPrice?: number;
     stopLoss?: number;
     takeProfit?: number;
-}
-
-export interface OrderPriceValidationError {
-    field: keyof OrderPriceFields;
-    message: string;
+    guaranteedStop?: number;
+    trailingStopPips?: number;
 }
 
 const FIELD_LABELS: Record<keyof OrderPriceFields, string> = {
@@ -24,14 +21,16 @@ const FIELD_LABELS: Record<keyof OrderPriceFields, string> = {
     stopPrice: 'Stop price',
     stopLoss: 'Stop loss',
     takeProfit: 'Take profit',
+    guaranteedStop: 'Guaranteed stop',
+    trailingStopPips: 'Trailing stop',
 };
 
 /**
- * Returns the first present field that is not a positive finite number, or `null` if every
- * present field is valid. Fields that are `undefined` are treated as legitimately omitted
- * (e.g. clearing a bracket) and are not validated.
+ * Returns an error message for the first present field that is not a positive finite number,
+ * or `null` if every present field is valid. Fields that are `undefined` are treated as
+ * legitimately omitted (e.g. clearing a bracket) and are not validated.
  */
-export function validateOrderPrices(fields: OrderPriceFields): OrderPriceValidationError | null {
+export function validateOrderPrices(fields: OrderPriceFields): string | null {
     for (const field of Object.keys(FIELD_LABELS) as (keyof OrderPriceFields)[]) {
         const value = fields[field];
         if (value === undefined) {
@@ -39,7 +38,7 @@ export function validateOrderPrices(fields: OrderPriceFields): OrderPriceValidat
         }
 
         if (!Number.isFinite(value) || value <= 0) {
-            return { field, message: `${FIELD_LABELS[field]} must be greater than 0` };
+            return `${FIELD_LABELS[field]} must be greater than 0`;
         }
     }
 
