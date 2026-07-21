@@ -1,0 +1,16 @@
+version: 2
+updates:
+    - package-ecosystem: "npm"
+      directories:
+          - "/"
+      schedule:
+          interval: "monthly"
+          time: "09:00"
+          timezone: "UTC"
+      cooldown:
+          default-days: 14
+      groups:
+          by-dependency:
+              group-by: "dependency-name"
+      commit-message:
+          prefix: ""
