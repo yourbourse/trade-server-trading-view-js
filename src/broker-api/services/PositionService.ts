@@ -140,7 +140,13 @@ export class PositionService {
                 throw new Error('Position not found');
             }
 
-            const closeQty = amount || position.qty;
+            if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0 || amount > position.qty)) {
+                throw new Error(
+                    `Invalid close amount ${amount} for position ${positionId} (position size: ${position.qty})`
+                );
+            }
+
+            const closeQty = amount ?? position.qty;
             const tif = await this.resolveCloseTif(position.symbol);
 
             const closeOrder: PlaceOrder = {
