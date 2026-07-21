@@ -59,7 +59,10 @@ export class MarketDataService {
             return this.fetchSymbolInfo(symbol, locale, ifNoneMatch);
         }
 
-        return this.symbolInfoCache.get(`${locale}:${symbol}`, () => this.fetchSymbolInfo(symbol, locale, null));
+        // Fixed-order array + JSON.stringify avoids ':' collisions in symbol names.
+        return this.symbolInfoCache.get(JSON.stringify([locale, symbol]), () =>
+            this.fetchSymbolInfo(symbol, locale, null)
+        );
     }
 
     private async fetchSymbolInfo(
@@ -112,7 +115,8 @@ export class MarketDataService {
             return this.fetchSymbols(locale, maxResults, nextToken, ifNoneMatch);
         }
 
-        return this.symbolsListCache.get(`${locale}:${maxResults ?? ''}:${nextToken ?? ''}`, () =>
+        // Same as getSymbolInfo: nextToken may contain ':', so avoid colon-joined keys.
+        return this.symbolsListCache.get(JSON.stringify([locale, maxResults ?? null, nextToken]), () =>
             this.fetchSymbols(locale, maxResults, nextToken, null)
         );
     }
