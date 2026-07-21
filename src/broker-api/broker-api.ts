@@ -138,7 +138,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // - pipValue: account currency (used for bracket P&L / Order Ticket)
         // - bigPointValue: contract currency (used for "Total Value (symbol currency)")
         // When profit currency differs from account currency, convert pipValue only.
-        // getRate returns 0 on failure → pipValue 0 (TV Money shows 0.00).
+        // getRate returns 0 on failure → TradingView hides the Order info section and bracket Money P&L shows as 0.00.
         const profitCurrency = symbolConfig.p;
         await this.accountService.ensureAccountDataLoaded();
         const accountCurrency = this.accountService.getAccountCurrency();
