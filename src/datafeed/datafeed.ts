@@ -30,6 +30,13 @@ import { createLogger } from '../utils/logger.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
 
+/**
+ * After the last L1 listener drops, keep the last quote briefly so Watchlist
+ * unsubscribe→resubscribe (or getQuotes) does not force a REST /quote round-trip.
+ * Longer idle symbols are pruned so the Maps cannot grow without bound.
+ */
+const QUOTE_CACHE_IDLE_EVICT_MS = 30_000;
+
 interface QuoteSubscription {
     symbols: string[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +66,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     // server's "Already exists" rejection when multiple widgets watch the
     // same symbol.
     private l1Listeners: Map<string, Set<string>>;
+    /** Deferred quote-cache eviction timers (symbol → timer). Cancelled if L1 is re-acquired. */
+    private quoteCacheEvictTimers: Map<string, ReturnType<typeof setTimeout>>;
     private reconnectRegistered: boolean;
 
     constructor(tradeServerClient: TradeServerClient) {
@@ -69,6 +78,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.quotesCache = new Map();
         this.latestRawQuotes = new Map();
         this.l1Listeners = new Map();
+        this.quoteCacheEvictTimers = new Map();
         this.reconnectRegistered = false;
         logger.debug('✅ Datafeed implements:', {
             hasOnReady: typeof this.onReady === 'function',
@@ -710,6 +720,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
      * the same tick all see the listener in the Set and skip the wire.
      */
     private acquireL1(symbol: string, listenerGUID: string): void {
+        this.cancelQuoteCacheEviction(symbol);
+
         const existing = this.l1Listeners.get(symbol);
         if (existing) {
             existing.add(listenerGUID);
@@ -738,10 +750,10 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     /**
      * Release a listener for `symbol`. Wire unsubscribe fires only on 1→0.
      *
-     * Keep quotesCache / latestRawQuotes: Watchlist often unsubscribes then
-     * resubscribes (or calls getQuotes again) when symbols are added. Clearing
-     * here forced a fresh REST /quote for symbols that already had live WS data.
-     * Caches are still reset on reconnect in handleReconnect().
+     * Quote caches are kept briefly after the last listener leaves so Watchlist
+     * resubscribe / getQuotes can reuse the last WS/REST snapshot. Idle entries
+     * are pruned after {@link QUOTE_CACHE_IDLE_EVICT_MS}; reconnect clears them
+     * immediately in handleReconnect().
      */
     private releaseL1(symbol: string, listenerGUID: string): void {
         const set = this.l1Listeners.get(symbol);
@@ -749,10 +761,38 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         set.delete(listenerGUID);
         if (set.size > 0) return;
         this.l1Listeners.delete(symbol);
+        this.scheduleQuoteCacheEviction(symbol);
         if (!this.api.isConnected()) return;
         this.api
             .unsubscribeFromQuotes(symbol)
             .catch((err: unknown) => logger.debug(`Failed to unsubscribe from L1: ${symbol}`, err));
+    }
+
+    private cancelQuoteCacheEviction(symbol: string): void {
+        const timer = this.quoteCacheEvictTimers.get(symbol);
+        if (!timer) return;
+        clearTimeout(timer);
+        this.quoteCacheEvictTimers.delete(symbol);
+    }
+
+    private scheduleQuoteCacheEviction(symbol: string): void {
+        this.cancelQuoteCacheEviction(symbol);
+        const timer = setTimeout(() => {
+            this.quoteCacheEvictTimers.delete(symbol);
+            // A listener may have re-acquired between schedule and fire.
+            if (this.l1Listeners.has(symbol)) return;
+            this.latestRawQuotes.delete(symbol);
+            this.quotesCache.delete(symbol);
+            logger.debug(`Evicted idle quote cache for ${symbol}`);
+        }, QUOTE_CACHE_IDLE_EVICT_MS);
+        this.quoteCacheEvictTimers.set(symbol, timer);
+    }
+
+    private clearQuoteCacheEvictionTimers(): void {
+        for (const timer of this.quoteCacheEvictTimers.values()) {
+            clearTimeout(timer);
+        }
+        this.quoteCacheEvictTimers.clear();
     }
 
     /**
@@ -779,6 +819,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         logger.info('WS reconnected — replaying subscriptions');
 
         // Local view must match the server's now-empty view.
+        this.clearQuoteCacheEvictionTimers();
         this.l1Listeners.clear();
         this.latestRawQuotes.clear();
         this.quotesCache.clear();

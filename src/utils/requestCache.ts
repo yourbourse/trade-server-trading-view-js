@@ -29,8 +29,11 @@ export class RequestCache<T> {
     async get(key: string, fetch: () => Promise<T>): Promise<T> {
         if (this.ttlMs > 0) {
             const cached = this.cache.get(key);
-            if (cached && cached.expiresAt > Date.now()) {
-                return cached.data;
+            if (cached) {
+                if (cached.expiresAt > Date.now()) {
+                    return cached.data;
+                }
+                this.cache.delete(key);
             }
         }
 

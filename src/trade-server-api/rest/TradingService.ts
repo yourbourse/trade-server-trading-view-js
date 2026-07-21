@@ -219,7 +219,7 @@ export class TradingService {
         filter: OpenPositionRequestFilter = {},
         nextToken: string | null = null
     ): Promise<PositionsCollection | undefined> {
-        const cacheKey = `${JSON.stringify(filter)}:${nextToken ?? ''}`;
+        const cacheKey = `${filter.symbolName ?? ''}:${filter.sortOrder ?? ''}:${filter.maxResults ?? ''}:${nextToken ?? ''}`;
         return this.positionsCache.get(cacheKey, () => this.fetchPositions(filter, nextToken));
     }
 
