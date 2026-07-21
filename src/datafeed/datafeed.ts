@@ -606,16 +606,6 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     }
 
     /**
-     * Synchronous lookup of the latest known bid/ask for a symbol, for callers (order price
-     * validation) that need a current market reference but can't wait on the callback-based
-     * getQuotes/subscribeQuotes API. Returns undefined fields if no quote has arrived yet.
-     */
-    getCachedQuote(symbol: string): { bid?: number; ask?: number } {
-        const raw = this.latestRawQuotes.get(symbol);
-        return { bid: raw?.bp, ask: raw?.ap };
-    }
-
-    /**
      * TradingView calls this function when it wants to receive real-time quotes
      */
     subscribeQuotes(
