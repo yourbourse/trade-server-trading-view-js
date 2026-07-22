@@ -26,6 +26,7 @@ import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
 import {
     OrderService,
+    OrderHistoryService,
     PositionService,
     TradeHistoryService,
     AccountService,
@@ -56,6 +57,7 @@ const logger = createLogger({ prefix: '[BrokerAPI]' });
 export class BrokerApi extends AbstractBrokerMinimal {
     private api: TradeServerClient;
     private orderService: OrderService;
+    private orderHistoryService: OrderHistoryService;
     private positionService: PositionService;
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
@@ -76,9 +78,15 @@ export class BrokerApi extends AbstractBrokerMinimal {
         });
 
         this.orderService = new OrderService(this.api);
+        this.orderHistoryService = new OrderHistoryService(this.api);
         this.positionService = new PositionService(this.api);
         this.tradeHistoryService = new TradeHistoryService(this.api);
-        this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
+        this.accountService = new AccountService(
+            this.api,
+            this.host,
+            this.tradeHistoryService,
+            this.orderHistoryService
+        );
         this.currencyConversionService = new CurrencyConversionService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),

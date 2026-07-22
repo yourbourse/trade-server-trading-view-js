@@ -21,9 +21,11 @@ import {
     accountProfileColumns,
     transferHistoryColumns,
     tradeHistoryColumns,
+    ordersHistoryColumns,
 } from '../columns';
 import { formatTimestamp } from '../type-mappings';
 import { TradeHistoryService } from './TradeHistoryService.js';
+import { OrderHistoryService } from './OrderHistoryService.js';
 import CONFIG from '@/config';
 import { deriveServerUrls } from '@/utils/serverUrl.js';
 import { createLogger } from '@/utils/logger.js';
@@ -41,6 +43,7 @@ export class AccountService {
     private api: TradeServerClient;
     private host: IBrokerConnectionAdapterHost;
     private tradeHistoryService: TradeHistoryService;
+    private orderHistoryService: OrderHistoryService;
 
     private readonly accountManagerData: AccountManagerData = {
         title: 'Demo account',
@@ -71,10 +74,16 @@ export class AccountService {
         currency: string;
         comment: string;
     }> = [];
-    constructor(api: TradeServerClient, host: IBrokerConnectionAdapterHost, tradeHistoryService: TradeHistoryService) {
+    constructor(
+        api: TradeServerClient,
+        host: IBrokerConnectionAdapterHost,
+        tradeHistoryService: TradeHistoryService,
+        orderHistoryService: OrderHistoryService
+    ) {
         this.api = api;
         this.host = host;
         this.tradeHistoryService = tradeHistoryService;
+        this.orderHistoryService = orderHistoryService;
 
         this.balanceWatchedValue = this.host.factory.createWatchedValue(this.accountManagerData.balance);
         this.equityWatchedValue = this.host.factory.createWatchedValue(this.accountManagerData.equity);
@@ -305,12 +314,35 @@ export class AccountService {
             tables: [tradeHistoryTable],
         };
 
+        const ordersHistoryTable: AccountManagerTable = {
+            id: 'ordersHistory',
+            columns: ordersHistoryColumns,
+            initialSorting: {
+                property: 'time',
+                asc: false,
+            },
+            flags: {
+                supportPagination: true,
+            },
+            getData: async (paginationLastId?: string | number) => {
+                logger.debug('getData() called for orders history table', { paginationLastId });
+                return this.orderHistoryService.getOrderHistory(paginationLastId);
+            },
+            changeDelegate: this.accountDetailsChangeDelegate,
+        };
+
+        const ordersHistoryPage: AccountManagerPage = {
+            id: 'ordersHistory',
+            title: 'Orders History',
+            tables: [ordersHistoryTable],
+        };
+
         return {
             accountTitle: 'Trading Account',
             summary: summaryFields,
             orderColumns: ordersPageColumns,
             positionColumns: positionsPageColumns,
-            pages: [accountPage, tradeHistoryPage, transferHistoryPage],
+            pages: [accountPage, tradeHistoryPage, ordersHistoryPage, transferHistoryPage],
         };
     }
 
