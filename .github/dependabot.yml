@@ -1,0 +1,15 @@
+version: 2
+updates:
+    - package-ecosystem: "npm"
+      directory: "/"
+      schedule:
+          interval: "monthly"
+          time: "09:00"
+          timezone: "UTC"
+      cooldown:
+          default-days: 14
+      ignore:
+          - dependency-name: "eslint"
+            versions: ["10.x"]
+      commit-message:
+          prefix: ""
