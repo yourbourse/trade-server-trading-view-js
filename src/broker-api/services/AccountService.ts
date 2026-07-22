@@ -14,7 +14,7 @@ import type {
     TransferHistory as TradeServerTransferHistory,
 } from '../../schema/public-api';
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
-import { StandardFormatterName } from '../types';
+import { OrderStatus, StandardFormatterName } from '../types';
 import {
     ordersPageColumns,
     positionsPageColumns,
@@ -342,6 +342,7 @@ export class AccountService {
             summary: summaryFields,
             orderColumns: ordersPageColumns,
             positionColumns: positionsPageColumns,
+            possibleOrderStatuses: [OrderStatus.Working, OrderStatus.Inactive],
             pages: [accountPage, tradeHistoryPage, ordersHistoryPage, transferHistoryPage],
         };
     }
