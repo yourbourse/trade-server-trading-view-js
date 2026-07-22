@@ -10,6 +10,8 @@ export interface OrderPriceFields {
     stopPrice?: number;
     stopLoss?: number;
     takeProfit?: number;
+    guaranteedStop?: number;
+    trailingStopPips?: number;
 }
 
 const PRICE_FIELD_LABELS: Record<keyof OrderPriceFields, string> = {
@@ -17,6 +19,8 @@ const PRICE_FIELD_LABELS: Record<keyof OrderPriceFields, string> = {
     stopPrice: 'Stop price',
     stopLoss: 'Stop loss',
     takeProfit: 'Take profit',
+    guaranteedStop: 'Guaranteed stop',
+    trailingStopPips: 'Trailing stop pips',
 };
 
 /**
