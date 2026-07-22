@@ -38,6 +38,7 @@ import {
     applyDurationDefaults,
     applyMarketOrderTypeDefault,
 } from '@/utils/tradingOrderDefaults.js';
+import { expandAllowedDurations } from '@/utils/orderDurationConfig.js';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -186,6 +187,9 @@ export class BrokerApi extends AbstractBrokerMinimal {
             allowedDurations.push('fok');
         }
 
+        const expandedAllowedDurations =
+            allowedDurations.length > 0 ? expandAllowedDurations(allowedDurations) : allowedDurations;
+
         return {
             qty: {
                 min: symbolConfig.min ,
@@ -206,7 +210,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             // ("Total Value (symbol currency)" in the Order Ticket).
             bigPointValue: symbolConfig.tv ? symbolConfig.tv / mintick / lotSize : undefined,
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
-            ...(allowedDurations.length > 0 && { allowedDurations }),
+            ...(expandedAllowedDurations.length > 0 && { allowedDurations: expandedAllowedDurations }),
         };
     }
 
