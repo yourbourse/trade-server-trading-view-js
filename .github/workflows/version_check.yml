@@ -1,0 +1,54 @@
+name: "[PR] Version Check"
+
+concurrency:
+  group: version-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+    branches:
+      - master
+
+jobs:
+  check-version:
+    name: "package.json version bumped"
+    runs-on: ubuntu-latest
+    if: ${{ github.actor != 'dependabot[bot]' && !contains(github.event.pull_request.labels.*.name, 'skip-version-bump') }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare version against base branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          BASE_VERSION=$(git show "$BASE_SHA:package.json" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+          HEAD_VERSION=$(node -p "require('./package.json').version")
+
+          BASE_VERSION="$BASE_VERSION" HEAD_VERSION="$HEAD_VERSION" node -e '
+            // Our "version" is not standard semver: it is YY.M.N (2-digit year . month . change number this month).
+            const toParts = (v) => v.split("-")[0].split(".").map(Number);
+            const base = toParts(process.env.BASE_VERSION);
+            const head = toParts(process.env.HEAD_VERSION);
+
+            let bumped = false;
+            for (let i = 0; i < 3; i++) {
+              if (head[i] > base[i]) { bumped = true; break; }
+              if (head[i] < base[i]) break;
+            }
+
+            if (!bumped) {
+              console.error(`::error::package.json version was not bumped (base: ${process.env.BASE_VERSION}, head: ${process.env.HEAD_VERSION}). Update the "version" field to the current year.month.change-number (e.g. 26.7.2), then commit package.json. Use "npm version <version> --no-git-tag-version" to set it — do not use plain "npm version <bump>" or "minor"/"major", they create an unwanted git tag/commit and don't match our year.month scheme. If this PR does not warrant a release, add the "skip-version-bump" label instead.`);
+              process.exit(1);
+            }
+
+            console.log(`Version bumped: ${process.env.BASE_VERSION} -> ${process.env.HEAD_VERSION}`);
+          '
