@@ -1,6 +1,11 @@
 /**
  * Broker Time in Force (duration) options and preferred defaults per order type.
  * Kept in one place so Order Ticket UI config and persisted defaults stay aligned.
+ *
+ * TradingView keeps the current TIF when switching order types if that TIF value is
+ * still in the new type's supported list. Market and resting orders therefore use
+ * distinct IOC/FOK duration values so Market → Limit/Stop/StopLimit falls back to GTC,
+ * while IOC/FOK remain manually selectable on resting orders.
  */
 
 import type { OrderDurationMetaInfo } from '../../charting_library/charting_library';
@@ -17,9 +22,20 @@ export const PREFERRED_DURATION_BY_ORDER_TYPE: Readonly<Record<OrderType, string
 
 const RESTING_ORDER_TYPES = [OrderType.Limit, OrderType.Stop, OrderType.StopLimit] as const;
 
+/** Duration value used for IOC on Market orders. */
+export const DURATION_IOC_MARKET = 'ioc';
+/** Duration value used for IOC on Limit/Stop/StopLimit (distinct so Market→resting resets to GTC). */
+export const DURATION_IOC_RESTING = 'ioc-resting';
+/** Duration value used for FOK on Market orders. */
+export const DURATION_FOK_MARKET = 'fok';
+/** Duration value used for FOK on Limit/Stop/StopLimit. */
+export const DURATION_FOK_RESTING = 'fok-resting';
+
 /**
  * Duration options for `broker_config.durations`.
- * IOC/FOK are Market-only so switching away from Market drops them and TV picks GTC.
+ * Preferred defaults stay Market → IOC and Limit/Stop/StopLimit → GTC
+ * (`PREFERRED_DURATION_BY_ORDER_TYPE`); IOC/FOK are selectable on resting orders
+ * via distinct duration values.
  */
 export const BROKER_ORDER_DURATIONS: OrderDurationMetaInfo[] = [
     {
@@ -36,16 +52,28 @@ export const BROKER_ORDER_DURATIONS: OrderDurationMetaInfo[] = [
         supportedOrderTypes: [...RESTING_ORDER_TYPES],
     },
     {
-        value: 'ioc',
+        value: DURATION_IOC_MARKET,
         name: 'IOC',
         description: 'Immediate or Cancel',
         supportedOrderTypes: [OrderType.Market],
     },
     {
-        value: 'fok',
+        value: DURATION_FOK_MARKET,
         name: 'FOK',
         description: 'Fill or Kill',
         supportedOrderTypes: [OrderType.Market],
+    },
+    {
+        value: DURATION_IOC_RESTING,
+        name: 'IOC',
+        description: 'Immediate or Cancel',
+        supportedOrderTypes: [...RESTING_ORDER_TYPES],
+    },
+    {
+        value: DURATION_FOK_RESTING,
+        name: 'FOK',
+        description: 'Fill or Kill',
+        supportedOrderTypes: [...RESTING_ORDER_TYPES],
     },
     {
         value: 'gtd',
@@ -73,4 +101,16 @@ export function isDurationCompatibleWithOrderType(duration: string, orderType: O
         return true;
     }
     return supported.includes(orderType);
+}
+
+/** Expand symbol-allowed TIF flags to include resting IOC/FOK duration aliases. */
+export function expandAllowedDurations(allowedDurations: string[]): string[] {
+    const expanded = new Set(allowedDurations);
+    if (expanded.has(DURATION_IOC_MARKET)) {
+        expanded.add(DURATION_IOC_RESTING);
+    }
+    if (expanded.has(DURATION_FOK_MARKET)) {
+        expanded.add(DURATION_FOK_RESTING);
+    }
+    return [...expanded];
 }
