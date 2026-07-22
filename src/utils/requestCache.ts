@@ -4,6 +4,10 @@
  * Concurrent callers for the same key share one promise; successful results
  * are served from cache until the TTL elapses. Rejections are never cached,
  * so the next caller retries.
+ *
+ * `clear()` bumps a generation so in-flight fetches that started before the
+ * clear cannot re-store stale data, and so new callers do not join those
+ * in-flight promises.
  */
 
 interface CacheEntry<T> {
@@ -14,6 +18,7 @@ interface CacheEntry<T> {
 export class RequestCache<T> {
     private readonly cache = new Map<string, CacheEntry<T>>();
     private readonly inFlight = new Map<string, Promise<T>>();
+    private generation = 0;
 
     /**
      * @param ttlMs How long successful results stay fresh. `0` coalesces
@@ -42,23 +47,32 @@ export class RequestCache<T> {
             return existing;
         }
 
+        const generationAtStart = this.generation;
         const request = fetch()
             .then((data) => {
-                if (this.ttlMs > 0 && this.shouldCache(data)) {
+                // Ignore completions that raced past a clear(); they may be stale.
+                if (generationAtStart === this.generation && this.ttlMs > 0 && this.shouldCache(data)) {
                     this.cache.set(key, { data, expiresAt: Date.now() + this.ttlMs });
                 }
                 return data;
             })
             .finally(() => {
-                this.inFlight.delete(key);
+                if (this.inFlight.get(key) === request) {
+                    this.inFlight.delete(key);
+                }
             });
 
         this.inFlight.set(key, request);
         return request;
     }
 
-    /** Drop all cached results. In-flight requests are unaffected. */
+    /**
+     * Drop cached results and detach in-flight fetches so they cannot
+     * repopulate the cache or be joined by later callers.
+     */
     clear(): void {
         this.cache.clear();
+        this.inFlight.clear();
+        this.generation++;
     }
 }

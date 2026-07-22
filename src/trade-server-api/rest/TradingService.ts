@@ -75,9 +75,13 @@ export class TradingService {
      */
     async placeOrder(order: PlaceOrder): Promise<Order | undefined> {
         this.log.info(`Placing order:`, order);
-        // Market orders can open/close positions immediately; drop stale snapshots.
-        this.invalidatePositionsCache();
-        return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
+        try {
+            return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
+        } finally {
+            // After the mutation attempt: drop snapshots so a concurrent fetch that
+            // spanned the trade cannot keep serving pre-trade positions.
+            this.invalidatePositionsCache();
+        }
     }
 
     /**
@@ -290,8 +294,6 @@ export class TradingService {
         takeProfit: number | null = null
     ): Promise<ModifySltpResult | undefined> {
         this.log.info(`Modifying position SL/TP: ${positionId}`);
-        // SL/TP is part of the position snapshot; drop stale cache entries.
-        this.invalidatePositionsCache();
         const body: ModifyPositionSltp = { id: positionId };
         if (stopLoss !== null) {
             body.sl = stopLoss;
@@ -300,7 +302,18 @@ export class TradingService {
             body.tp = takeProfit;
         }
 
-        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyPositionSltp, body, undefined, TradingService.MUTATION_OPTS);
+        try {
+            return await executeAuthenticatedRequest<ModifySltpResult>(
+                this.user,
+                modifyPositionSltp,
+                body,
+                undefined,
+                TradingService.MUTATION_OPTS
+            );
+        } finally {
+            // SL/TP is part of the position snapshot; drop after the mutation attempt.
+            this.invalidatePositionsCache();
+        }
     }
 
     // ==================== TRADES ====================
