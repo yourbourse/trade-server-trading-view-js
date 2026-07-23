@@ -304,18 +304,18 @@ export class OrderService {
                 orderParams.tt = preOrder.duration.datetime * 1000;
             }
 
-            if (preOrder.limitPrice) {
+            if (preOrder.limitPrice !== undefined) {
                 orderParams.lp = preOrder.limitPrice;
             }
 
-            if (preOrder.stopPrice) {
+            if (preOrder.stopPrice !== undefined) {
                 orderParams.sp = preOrder.stopPrice;
             }
 
-            if (preOrder.stopLoss) {
+            if (preOrder.stopLoss !== undefined) {
                 orderParams.sl = preOrder.stopLoss;
             }
-            if (preOrder.takeProfit) {
+            if (preOrder.takeProfit !== undefined) {
                 orderParams.tp = preOrder.takeProfit;
             }
 

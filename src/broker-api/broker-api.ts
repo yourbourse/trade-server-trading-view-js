@@ -21,6 +21,7 @@ import { IDatafeedQuotesApi } from '../../charting_library/datafeed-api';
 
 import { AbstractBrokerMinimal } from './abstract-broker-minimal';
 import { ConnectionStatus, OrderType, ParentType, Side } from './types';
+import { findNonFinitePriceField, type OrderPriceFields } from './lib/finitePriceGuard';
 
 import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
@@ -215,6 +216,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     }
 
     public async placeOrder(preOrder: PreOrder): Promise<PlaceOrderResult> {
+        this.assertFinitePrices(preOrder);
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.host.setAccountManagerVisibilityMode('normal' as any);
 
@@ -234,6 +237,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
     public async modifyOrder(order: Order, _confirmId?: string | undefined): Promise<void> {
         void _confirmId;
+
+        this.assertFinitePrices(order);
 
         const bracketOrder = order as Order & { parentId?: string; parentType?: number };
 
@@ -295,6 +300,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
     ): Promise<void> {
         void _customFields;
 
+        this.assertFinitePrices(brackets);
+
         const resolvedBrackets = await this.resolvePositionBrackets(positionId, brackets);
         await this.positionService.editPositionBrackets(positionId, resolvedBrackets);
 
@@ -313,6 +320,20 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const syncedOrders = this.orderService.syncBracketOrdersFromPosition(updatedPosition);
         syncedOrders.forEach((order) => this.host.orderUpdate?.(order));
+    }
+
+    /**
+     * Reject non-finite price fields before they reach the API. Covers the Order Ticket,
+     * chart-line drags, and the bracket dialog uniformly since all three call through
+     * placeOrder/modifyOrder/editPositionBrackets. Direction/sign/distance-from-market rules are
+     * left entirely to Trade Server's rejection (see finitePriceGuard.ts for why).
+     */
+    private assertFinitePrices(fields: OrderPriceFields): void {
+        const errorMessage = findNonFinitePriceField(fields);
+        if (errorMessage) {
+            notificationService.error('Invalid price', errorMessage);
+            throw new Error(errorMessage);
+        }
     }
 
     /**
