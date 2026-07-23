@@ -19,14 +19,28 @@ jobs:
   check-version:
     name: "package.json version bumped"
     runs-on: ubuntu-latest
-    if: ${{ github.actor != 'dependabot[bot]' && !contains(github.event.pull_request.labels.*.name, 'skip-version-bump') }}
 
     steps:
+      - name: Determine whether to skip
+        id: skip
+        env:
+          ACTOR: ${{ github.actor }}
+          SKIP_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'skip-version-bump') }}
+        run: |
+          if [ "$ACTOR" = "dependabot[bot]" ] || [ "$SKIP_LABEL" = "true" ]; then
+            echo "Skipping version bump check (actor: $ACTOR, skip-version-bump label: $SKIP_LABEL)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
         with:
           fetch-depth: 0
 
       - name: Compare version against base branch
+        if: steps.skip.outputs.skip != 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
