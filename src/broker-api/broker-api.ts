@@ -224,6 +224,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
             const order = this.orderService.getCachedOrders().find((o) => o.id === result.orderId);
             if (order) {
                 this.host.orderUpdate?.(order);
+                const sideLabel = order.side === Side.Buy ? 'Buy' : 'Sell';
+                notificationService.success('Order placed', `${sideLabel} ${order.qty} ${order.symbol} order placed successfully.`);
             }
         }
 
@@ -234,6 +236,27 @@ export class BrokerApi extends AbstractBrokerMinimal {
         void _confirmId;
 
         const bracketOrder = order as Order & { parentId?: string; parentType?: number };
+
+        if (bracketOrder.parentType !== undefined) {
+            const cached = this.orderService.getCachedOrders().find((o) => o.id === order.id);
+
+            if (cached && order.qty !== cached.qty) {
+                const message =
+                    'Quantity cannot be changed for stop loss / take profit orders — it always matches the parent order/position quantity.';
+                notificationService.error('Unable to modify order', message);
+                throw new Error(message);
+            }
+
+            if (
+                cached &&
+                (order.duration?.type !== cached.duration?.type || order.duration?.datetime !== cached.duration?.datetime)
+            ) {
+                const message = 'Time in force cannot be changed for stop loss / take profit orders.';
+                notificationService.error('Unable to modify order', message);
+                throw new Error(message);
+            }
+        }
+
         if (
             bracketOrder.parentType === ParentType.Position &&
             bracketOrder.parentId &&
@@ -258,6 +281,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
             cachedOrders[index] = { ...cachedOrders[index]!, ...order };
             this.orderService.setCachedOrders(cachedOrders);
             this.host.orderUpdate?.(cachedOrders[index]!);
+        } else {
+            logger.warn('modifyOrder: order missing from cache after update, forcing full refresh', order.id);
+            this.orderService.clearCache();
+            this.host.ordersFullUpdate?.();
         }
     }
 
@@ -273,6 +300,9 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (!updatedPosition) {
+            logger.warn('editPositionBrackets: position missing from cache after update, forcing full refresh', positionId);
+            this.positionService.clearCache();
+            this.host.positionsFullUpdate?.();
             return;
         }
 
