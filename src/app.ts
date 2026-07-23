@@ -12,7 +12,6 @@ import {
 } from 'charting_library/charting_library.js';
 import type {
     BrokerConfigFlags,
-    OrderDurationMetaInfo,
     TradingTerminalWidgetOptions,
 } from 'charting_library/charting_library.js';
 
@@ -24,7 +23,7 @@ import { BrokerApi } from './broker-api/broker-api.js';
 import { isAuthenticated, signOut, getUserCredentials, persistApiToken, clearStoredTokens } from './utils/auth.js';
 import { displayVersion, logLibraryVersion } from './utils/version.js';
 import { createLogger } from './utils/logger.js';
-import { OrderType } from './broker-api/types.js';
+import { BROKER_ORDER_DURATIONS } from './utils/orderDurationConfig.js';
 import { initConnectionIndicator } from './ui/connectionIndicator.js';
 
 const logger = createLogger({ prefix: '[App]' });
@@ -88,6 +87,7 @@ class TradingApp {
     widget: IChartingLibraryWidget | null;
     brokerAPI: BrokerApi | null;
     private autoSaveHandler: (() => void) | null = null;
+    private symbolChangedHandler: (() => void) | null = null;
     private disposeConnectionIndicator: (() => void) | null = null;
 
     constructor() {
@@ -342,37 +342,8 @@ class TradingApp {
             },
             broker_config: {
                 configFlags: brokerConfigFlags,
-                durations: [
-                    {
-                        value: 'day',
-                        name: 'DAY',
-                        description: 'Day Order',
-                    },
-                    {
-                        value: 'gtc',
-                        name: 'GTC',
-                        description: 'Good Till Cancelled',
-                        default: true,
-                    },
-                    {
-                        value: 'ioc',
-                        name: 'IOC',
-                        description: 'Immediate or Cancel',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
-                    },
-                    {
-                        value: 'fok',
-                        name: 'FOK',
-                        description: 'Fill or Kill',
-                        supportedOrderTypes: [OrderType.Market, OrderType.Limit, OrderType.Stop, OrderType.StopLimit],
-                    },
-                    {
-                        value: 'gtd',
-                        name: 'GTD',
-                        hasDatePicker: true,
-                        hasTimePicker: true,
-                    },
-                ] as OrderDurationMetaInfo[],
+                // Preferred TIF: Market → IOC; Limit/Stop/StopLimit → GTC (see orderDurationConfig).
+                durations: BROKER_ORDER_DURATIONS,
             },
         };
 
@@ -398,6 +369,18 @@ class TradingApp {
                 logger.error('This means TradingView did not recognize the datafeed as having quotes support');
             } else {
                 logger.info('✅ Broker API is initialized:', this.brokerAPI);
+                this.brokerAPI.setupMarketOrderTypeDefaults(() => this.widget?.activeChart()?.symbol());
+                try {
+                    this.symbolChangedHandler = () => {
+                        const symbol = this.widget?.activeChart()?.symbol();
+                        if (symbol) {
+                            this.brokerAPI?.resetOrderTypeToMarket(symbol);
+                        }
+                    };
+                    this.widget!.activeChart().onSymbolChanged().subscribe(null, this.symbolChangedHandler);
+                } catch (err) {
+                    logger.warn('Could not subscribe to symbol changes for order type defaults:', err);
+                }
             }
 
             this.autoSaveHandler = () => {
@@ -449,6 +432,8 @@ class TradingApp {
      * Cleanup on app destroy
      */
     destroy() {
+        this.brokerAPI?.teardownMarketOrderTypeDefaults();
+
         if (this.disposeConnectionIndicator) {
             this.disposeConnectionIndicator();
             this.disposeConnectionIndicator = null;
@@ -460,6 +445,14 @@ class TradingApp {
             if (this.autoSaveHandler) {
                 this.widget.unsubscribe('onAutoSaveNeeded', this.autoSaveHandler);
                 this.autoSaveHandler = null;
+            }
+            if (this.symbolChangedHandler) {
+                try {
+                    this.widget.activeChart().onSymbolChanged().unsubscribe(null, this.symbolChangedHandler);
+                } catch {
+                    // chart may already be torn down
+                }
+                this.symbolChangedHandler = null;
             }
             this.widget.remove();
         }

@@ -20,7 +20,7 @@ When you open the application, you'll be directed to the sign-in page. Enter you
 |-------|---------------|
 | **Login** | Your numeric account number (e.g., `1002`) |
 | **Password** | Your Trade Server password |
-| **Server** | Your Trade Server URL (e.g., `https://uat.api.yourbourse.trade:32285`) |
+| **Server** | Your Trade Server URL (e.g., `https://ts285-uat.yourbourse.trade`) |
 
 After signing in:
 - Your credentials are stored in the browser session (cleared when the tab closes)

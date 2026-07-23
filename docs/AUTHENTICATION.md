@@ -91,7 +91,7 @@ The trading platform uses a multi-layer authentication system:
 {
   "userCredentials": {
     "login": 1002,
-    "server": "https://uat.api.yourbourse.trade:32285"
+    "server": "https://ts285-uat.yourbourse.trade"
   },
   "apiKey": "eyJhbGciOiJIUzI1NiIs...",
   "signingToken": "a1b2c3d4e5f6..."
@@ -104,7 +104,7 @@ The trading platform uses a multi-layer authentication system:
 {
   "savedCredentials": {
     "login": 1002,
-    "server": "https://uat.api.yourbourse.trade:32285"
+    "server": "https://ts285-uat.yourbourse.trade"
   }
 }
 ```

@@ -67,7 +67,7 @@ server: {
 |-------|----------|
 | Login field is empty or non-numeric | Enter a valid numeric account number |
 | Password field is empty | Enter your password |
-| Server URL is invalid | Use a full URL with protocol: `https://uat.api.yourbourse.trade:32285` |
+| Server URL is invalid | Use a full URL with protocol: `https://ts285-uat.yourbourse.trade` |
 
 ### "Authentication Failed" Error
 
