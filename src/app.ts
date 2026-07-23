@@ -299,6 +299,7 @@ class TradingApp {
             supportModifyPositionBrackets: true,
             supportOrderBrackets: true,
             supportPositionBrackets: true,
+            supportPartialClosePosition: true,
             showNotificationsLog: true,
 	    
         } as BrokerConfigFlags & {
