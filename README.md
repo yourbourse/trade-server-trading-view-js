@@ -26,6 +26,11 @@ A fully-featured trading terminal that connects TradingView's charting capabilit
 
 ---
 
+> [!WARNING]
+> **Supported TradingView Version:** This project is built and tested against **TradingView Charting Library v30.3.0** and the **Broker API v30.3.0** bundled with it. Using a different version may result in breaking changes, missing features, or unexpected behavior. Please ensure you are using a compatible version before proceeding.
+
+---
+
 ## Highlights
 
 | Feature | Description |
