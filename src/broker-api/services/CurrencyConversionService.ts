@@ -28,8 +28,7 @@ export class CurrencyConversionService {
 
     /**
      * Returns how many units of `to` currency equal 1 unit of `from` currency.
-     * Falls back to `1` (logging the error) if the rate can't be fetched, so
-     * callers degrade to the pre-conversion behavior instead of throwing.
+     * On fetch failure returns `0`.
      */
     async getRate(from: string, to: string): Promise<number> {
         if (!from || !to || from === to) {
@@ -56,10 +55,10 @@ export class CurrencyConversionService {
                 return rate;
             })
             .catch((error) => {
-                logger.error(`Failed to fetch conversion rate ${from}->${to}, falling back to 1:`, error);
+                logger.error(`Failed to fetch conversion rate ${from}->${to}, returning 0:`, error);
                 // Short negative cache: throttle retries without persisting a wrong rate long-term.
-                this.cache.set(key, { rate: 1, expiresAt: Date.now() + FAILURE_CACHE_TTL_MS });
-                return 1;
+                this.cache.set(key, { rate: 0, expiresAt: Date.now() + FAILURE_CACHE_TTL_MS });
+                return 0;
             })
             .finally(() => {
                 this.inFlight.delete(key);

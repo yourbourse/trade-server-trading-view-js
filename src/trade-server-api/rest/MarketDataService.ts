@@ -4,7 +4,14 @@
  */
 
 import { CandleInterval } from '../../schema/public-api/types.gen.js';
-import type { Symbol, SymbolCollection, Book, TradeCollection, ConversionRate } from '../../schema/public-api/types.gen.js';
+import type {
+    Symbol,
+    SymbolCollection,
+    Book,
+    TradeCollection,
+    ConversionRate,
+    Quote,
+} from '../../schema/public-api/types.gen.js';
 import {
     getSymbols,
     getSymbol,
@@ -19,10 +26,21 @@ import { getGETHeaders, executeAuthenticatedRequest } from '../../utils/api.js';
 import type { TracingHeaders } from '../../utils/traceContext.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
+import { RequestCache } from '../../utils/requestCache.js';
+
+/** Symbol specs are stable for a session; keep long enough to collapse TV's parallel lookups. */
+const SYMBOL_INFO_CACHE_TTL_MS = 5 * 60_000;
+
+/** Full symbol list is large and stable; cache across Watchlist/search keystrokes. */
+const SYMBOLS_LIST_CACHE_TTL_MS = 5 * 60_000;
 
 export class MarketDataService {
     private user: AuthUser;
     private log = logger.child('MarketDataService');
+    private readonly symbolInfoCache = new RequestCache<Symbol>(SYMBOL_INFO_CACHE_TTL_MS);
+    private readonly symbolsListCache = new RequestCache<SymbolCollection>(SYMBOLS_LIST_CACHE_TTL_MS);
+    /** ttl 0: collapses parallel getTicker calls only; live freshness comes from WS via the datafeed. */
+    private readonly tickerCache = new RequestCache<Quote>(0);
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -31,8 +49,27 @@ export class MarketDataService {
     /**
      * Get symbol configuration
      * GET /symbols/get/{symbolName}
+     *
+     * Shared across datafeed + broker callers. Concurrent requests for the same
+     * symbol/locale coalesce onto one in-flight HTTP call.
      */
     async getSymbolInfo(symbol: string, locale: string = 'en', ifNoneMatch: string | null = null): Promise<Symbol> {
+        // Conditional requests must hit the network; skip shared cache.
+        if (ifNoneMatch) {
+            return this.fetchSymbolInfo(symbol, locale, ifNoneMatch);
+        }
+
+        // Fixed-order array + JSON.stringify avoids ':' collisions in symbol names.
+        return this.symbolInfoCache.get(JSON.stringify([locale, symbol]), () =>
+            this.fetchSymbolInfo(symbol, locale, null)
+        );
+    }
+
+    private async fetchSymbolInfo(
+        symbol: string,
+        locale: string,
+        ifNoneMatch: string | null
+    ): Promise<Symbol> {
         this.log.debug(`Fetching symbol info: ${symbol}`);
         const headers: Record<string, unknown> = {
             ...getGETHeaders(this.user),
@@ -63,12 +100,32 @@ export class MarketDataService {
     /**
      * Get all available symbols
      * GET /symbols/query
+     *
+     * searchSymbols filters this list client-side on every keystroke; cache +
+     * in-flight coalesce so typing does not re-download the full catalog.
      */
     async getSymbols(
         locale: string = 'en',
         maxResults: number | null = null,
         nextToken: string | null = null,
         ifNoneMatch: string | null = null
+    ): Promise<SymbolCollection> {
+        // Conditional requests must hit the network; skip shared cache.
+        if (ifNoneMatch) {
+            return this.fetchSymbols(locale, maxResults, nextToken, ifNoneMatch);
+        }
+
+        // Same as getSymbolInfo: nextToken may contain ':', so avoid colon-joined keys.
+        return this.symbolsListCache.get(JSON.stringify([locale, maxResults ?? null, nextToken]), () =>
+            this.fetchSymbols(locale, maxResults, nextToken, null)
+        );
+    }
+
+    private async fetchSymbols(
+        locale: string,
+        maxResults: number | null,
+        nextToken: string | null,
+        ifNoneMatch: string | null
     ): Promise<SymbolCollection> {
         this.log.debug('Fetching symbols');
         const headers: Record<string, unknown> = {
@@ -106,8 +163,16 @@ export class MarketDataService {
     /**
      * Get current ticker/quote (top of the book)
      * GET /quote/{symbolName}
+     *
+     * Concurrent requests for the same symbol coalesce onto one in-flight HTTP call.
+     * No success TTL: once WS is live, the datafeed should serve quotes from its
+     * own cache; a short REST TTL only caused re-fetches when Watchlist re-asked.
      */
-    async getTicker(symbol: string) {
+    async getTicker(symbol: string): Promise<Quote> {
+        return this.tickerCache.get(symbol, () => this.fetchTicker(symbol));
+    }
+
+    private async fetchTicker(symbol: string): Promise<Quote> {
         this.log.debug(`Fetching ticker: ${symbol}`);
         const headers = getGETHeaders(this.user);
         const response = await getTob({
@@ -115,6 +180,11 @@ export class MarketDataService {
             headers,
             path: { symbolName: symbol },
         });
+
+        if (!response.data) {
+            throw new Error(`Failed to fetch ticker for ${symbol}`);
+        }
+
         return response.data;
     }
 
