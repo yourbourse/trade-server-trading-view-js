@@ -27,6 +27,7 @@ import { TradeHistoryService } from './TradeHistoryService.js';
 import CONFIG from '@/config';
 import { deriveServerUrls } from '@/utils/serverUrl.js';
 import { createLogger } from '@/utils/logger.js';
+import { unescape } from 'lodash-es';
 
 const logger = createLogger({ prefix: '[AccountService]' });
 
@@ -370,7 +371,7 @@ export class AccountService {
                     type: transfer.T,
                     amount: transfer.a,
                     currency: transfer.c,
-                    comment: transfer.ct || '',
+                    comment: unescape(transfer.ct || ''),
                 };
             });
 
