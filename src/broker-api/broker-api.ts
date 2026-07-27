@@ -33,6 +33,7 @@ import {
     CurrencyConversionService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
+import { unescape } from 'lodash-es';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -187,7 +188,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             pipSize,
             minTick: mintick,
             lotSize,
-            description: symbolConfig.d,
+            description: unescape(symbolConfig.d),
             brokerSymbol: symbolConfig.n,
             //type: 'forex',
             currency: symbolConfig.p,

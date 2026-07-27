@@ -27,6 +27,7 @@ import { TradeServerClient } from '../trade-server-api/TradeServerClient.js';
 import { CandleInterval } from '../schema/public-api/types.gen.js';
 import type { ResponseType } from '../trade-server-api/types/websocket-messages.js';
 import { createLogger } from '../utils/logger.js';
+import { unescape } from 'lodash-es';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
 
@@ -141,7 +142,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     .map((symbol: Symbol) => ({
                         symbol: symbol.n,
                         full_name: symbol.n,
-                        description: symbol.d,
+                        description: unescape(symbol.d),
                         exchange: symbol.ex ?? '',
                         type: symbol.it ?? '',
                     }));
@@ -174,7 +175,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
 
                 const symbolData: LibrarySymbolInfo = {
                     name: symbolInfo.n,
-                    description: symbolInfo.d,
+                    description: unescape(symbolInfo.d),
                     type: 'forex',
                     session: '24x7',
                     timezone: 'Etc/UTC',
