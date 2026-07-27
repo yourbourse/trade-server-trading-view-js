@@ -22,7 +22,7 @@ This demo shows the complete authentication flow and platform overview:
 1. **Sign-in page appears** — Enter your account credentials
    - **Login:** Your numeric account number (e.g., 1002)
    - **Password:** Your Trade Server password
-   - **Server:** Trade Server URL (e.g., `https://uat.api.yourbourse.trade:32285`)
+   - **Server:** Trade Server URL (e.g., `https://ts285-uat.yourbourse.trade`)
 
 2. **Authentication** — Credentials are validated against the Trade Server REST API
    - POST request to `/api/v1/authorize`
