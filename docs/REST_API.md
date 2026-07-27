@@ -795,7 +795,7 @@ Update `src/config.ts` with your API credentials:
 ```typescript
 export const CONFIG: AppConfig = {
   tradeServer: {
-    server: 'https://uat.api.yourbourse.trade:32285',
+    server: 'https://ts285-uat.yourbourse.trade',
     user: {
       login: 10,
       password: '',  // Signing token (set after authentication)

@@ -141,7 +141,7 @@ This starts the Vite development server:
 |-------|-------|
 | **Login** | Your account number (numeric) |
 | **Password** | Your Trade Server password |
-| **Server** | Your Trade Server URL (e.g., `https://uat.api.yourbourse.trade:32285`) |
+| **Server** | Your Trade Server URL (e.g., `https://ts285-uat.yourbourse.trade`) |
 
 After signing in, the application:
 1. Authenticates against the Trade Server REST API
