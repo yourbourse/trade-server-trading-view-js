@@ -22,6 +22,7 @@ function withStopDisplayPrice(order: Order, stopPrice: number): Order {
 export class OrderService {
     private api: TradeServerClient;
     private cachedOrders: Order[];
+    private refreshCachedOrdersPromise: Promise<Order[]> | null = null;
 
     constructor(api: TradeServerClient) {
         this.api = api;
@@ -246,28 +247,40 @@ export class OrderService {
         return order;
     }
 
+    /**
+     * Refreshes the working/inactive orders cache from `/orders/open` only. Completed orders
+     * live exclusively in the on-demand, paginated Orders History table (AccountService) — they
+     * are never merged in here, so there is nothing to bound by time and no overlap to reconcile.
+     *
+     * Coalesces concurrent callers onto one in-flight fetch (broker-api.ts has two independent
+     * call sites: the cache-empty path in orders(), and the WS terminal-order refresh path).
+     */
     async refreshCachedOrders(): Promise<Order[]> {
+        if (!this.refreshCachedOrdersPromise) {
+            this.refreshCachedOrdersPromise = this.fetchAndCacheWorkingOrders().finally(() => {
+                this.refreshCachedOrdersPromise = null;
+            });
+        }
+
+        return this.refreshCachedOrdersPromise;
+    }
+
+    private async fetchAndCacheWorkingOrders(): Promise<Order[]> {
         logger.debug('refreshCachedOrders');
 
         try {
-            const [workingOrders, historicalOrders] = await Promise.all([
+            const [workingOrders, positionsData] = await Promise.all([
                 this.api.trading.getAllOrders({}),
-                this.api.trading.getAllOrderHistory({}),
+                this.api.trading.getPositions({}),
             ]);
 
             const workingOrdersList = workingOrders || [];
-            const historicalOrdersList = historicalOrders || [];
-            const allOrders = [...workingOrdersList, ...historicalOrdersList];
-
-            const positionsData = await this.api.trading.getPositions({});
             const positions = positionsData?.positions || [];
-            const ordersWithPositionBrackets = enrichPositionBracketOrders(allOrders, positions);
+            const ordersWithPositionBrackets = enrichPositionBracketOrders(workingOrdersList, positions);
 
             this.cachedOrders = transformOrders(ordersWithPositionBrackets) as Order[];
 
-            logger.info('Fetched ALL orders (with pagination):', {
-                workingCount: workingOrdersList.length,
-                historicalCount: historicalOrdersList.length,
+            logger.info('Fetched working orders:', {
                 total: this.cachedOrders.length,
             });
 

@@ -252,6 +252,90 @@ export const tradeHistoryColumns: AccountManagerColumn[] = [
 ] as any;
 
 /**
+ * Column structure for the "Orders History" page
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ordersHistoryColumns: AccountManagerColumn[] = [
+    {
+        label: 'Symbol',
+        formatter: 'symbol' as StandardFormatterName,
+        id: CommonAccountManagerColumnId.Symbol,
+        dataFields: ['symbol', 'symbol', 'message'],
+    },
+    {
+        label: 'Side',
+        id: 'side',
+        dataFields: ['side'],
+        formatter: 'side' as StandardFormatterName,
+    },
+    {
+        label: 'Type',
+        id: 'type',
+        dataFields: ['type', 'parentId', 'stopType'],
+        formatter: 'type' as StandardFormatterName,
+    },
+    {
+        label: 'Qty',
+        alignment: 'right',
+        id: 'qty',
+        dataFields: ['qty'],
+        help: 'Size in lots',
+        formatter: 'formatQuantity' as StandardFormatterName,
+    },
+    {
+        label: 'Limit Price',
+        alignment: 'right',
+        id: 'limitPrice',
+        dataFields: ['limitPrice'],
+        formatter: 'formatPrice' as StandardFormatterName,
+    },
+    {
+        label: 'Stop Price',
+        alignment: 'right',
+        id: 'stopPrice',
+        dataFields: ['stopPrice'],
+        formatter: 'formatPrice' as StandardFormatterName,
+    },
+    {
+        label: 'Fill Price',
+        alignment: 'right',
+        id: 'avgPrice',
+        dataFields: ['avgPrice'],
+        formatter: 'formatPrice' as StandardFormatterName,
+    },
+    {
+        label: 'Date/Time',
+        id: 'time',
+        dataFields: ['time'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Status',
+        id: 'status',
+        dataFields: ['status'],
+        formatter: 'status' as StandardFormatterName,
+    },
+    {
+        label: 'Order ID',
+        id: 'id',
+        dataFields: ['id'],
+    },
+    {
+        label: 'Parent Order',
+        id: 'parentOrderId',
+        dataFields: ['parentOrderId'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    {
+        label: 'Parent Position',
+        id: 'parentPositionId',
+        dataFields: ['parentPositionId'],
+        formatter: 'text' as StandardFormatterName,
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+] as any;
+
+/**
  * Column structure for the custom "Account Summary" page
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
