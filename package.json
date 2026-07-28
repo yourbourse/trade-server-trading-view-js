@@ -1,6 +1,6 @@
 {
   "private": true,
-  "version": "26.7.6",
+  "version": "26.7.7",
   "description": "TradingView Integration with YourBourse Trade Server",
   "type": "module",
   "author": "YourBourse",
