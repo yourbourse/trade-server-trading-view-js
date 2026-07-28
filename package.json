@@ -1,6 +1,6 @@
 {
   "private": true,
-  "version": "26.7.6",
+  "version": "26.7.7",
   "description": "TradingView Integration with YourBourse Trade Server",
   "type": "module",
   "author": "YourBourse",
@@ -28,18 +28,20 @@
   },
   "dependencies": {
     "axios": "^1.18.1",
-    "crypto-js": "^4.2.0"
+    "crypto-js": "^4.2.0",
+    "lodash-es": "^4.18.1"
   },
   "devDependencies": {
+    "@hey-api/openapi-ts": "^0.99.0",
     "@types/crypto-js": "^4.2.0",
+    "@types/lodash-es": "^4.17.12",
     "@typescript-eslint/eslint-plugin": "^8.63.0",
     "@typescript-eslint/parser": "^8.63.0",
     "eslint": "^9.39.4",
     "prettier": "^3.9.4",
+    "rimraf": "^6.1.3",
     "typescript": "^6.0.3",
     "vite": "^8.1.3",
-    "vite-plugin-banner": "^0.8.1",
-    "@hey-api/openapi-ts": "^0.99.0",
-    "rimraf": "^6.1.3"
+    "vite-plugin-banner": "^0.8.1"
   }
 }

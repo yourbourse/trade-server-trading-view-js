@@ -40,6 +40,7 @@ import {
     applyMarketOrderTypeDefault,
 } from '@/utils/tradingOrderDefaults.js';
 import { expandAllowedDurations } from '@/utils/orderDurationConfig.js';
+import { unescape } from 'lodash-es';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -207,7 +208,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             pipSize,
             minTick: mintick,
             lotSize,
-            description: symbolConfig.d,
+            description: unescape(symbolConfig.d),
             brokerSymbol: symbolConfig.n,
             //type: 'forex',
             currency: symbolConfig.p,
