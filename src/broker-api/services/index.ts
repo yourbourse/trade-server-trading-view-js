@@ -1,4 +1,5 @@
 export { OrderService } from './OrderService.js';
+export { OrderHistoryService } from './OrderHistoryService.js';
 export { PositionService } from './PositionService.js';
 export { TradeHistoryService } from './TradeHistoryService.js';
 export { AccountService } from './AccountService.js';
