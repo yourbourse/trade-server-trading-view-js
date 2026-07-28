@@ -118,7 +118,7 @@ After successful sign-in, the following is stored in session storage:
 ```json
 {
   "login": 1002,
-  "server": "https://uat.api.yourbourse.trade:32228"
+  "server": "https://ts228-uat.yourbourse.trade"
 }
 ```
 
@@ -132,7 +132,7 @@ After successful sign-in, the following is stored in session storage:
 ```json
 {
   "login": 1002,
-  "server": "https://uat.api.yourbourse.trade:32228"
+  "server": "https://ts228-uat.yourbourse.trade"
 }
 ```
 

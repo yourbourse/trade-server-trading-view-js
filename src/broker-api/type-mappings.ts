@@ -12,6 +12,12 @@ import type {
     Trade as TradeServerTrade,
     TimeInForce,
 } from '../schema/public-api/types.gen';
+import {
+    DURATION_FOK_MARKET,
+    DURATION_FOK_RESTING,
+    DURATION_IOC_MARKET,
+    DURATION_IOC_RESTING,
+} from '../utils/orderDurationConfig.js';
 
 /**
  * Format microseconds timestamp to human-readable date/time
@@ -80,17 +86,32 @@ export function mapOrderStatus(status: OrderStatus): number {
     return statusMap[status] || 3;
 }
 
+function isRestingTradingViewOrderType(orderType?: TradingViewOrderType): boolean {
+    return (
+        orderType === TradingViewOrderType.Limit ||
+        orderType === TradingViewOrderType.Stop ||
+        orderType === TradingViewOrderType.StopLimit
+    );
+}
+
 /**
  * Map Trade Server time in force to TradingView format
  * @param tif - Trade Server TimeInForce
+ * @param tt - optional GTD expiry (Trade Server microseconds)
+ * @param orderType - TradingView order type (selects Market vs resting IOC/FOK duration values)
  * @returns TradingView duration object
  */
-export function mapTimeInForce(tif: TimeInForce, tt?: number): { type: string; datetime?: number } {
+export function mapTimeInForce(
+    tif: TimeInForce,
+    tt?: number,
+    orderType?: TradingViewOrderType
+): { type: string; datetime?: number } {
+    const resting = isRestingTradingViewOrderType(orderType);
     const tifMap: Record<TimeInForce, { type: string }> = {
         GTC: { type: 'gtc' },
         Day: { type: 'day' },
-        IOC: { type: 'ioc' },
-        FOK: { type: 'fok' },
+        IOC: { type: resting ? DURATION_IOC_RESTING : DURATION_IOC_MARKET },
+        FOK: { type: resting ? DURATION_FOK_RESTING : DURATION_FOK_MARKET },
         GTD: { type: 'gtd' },
         Ms: { type: 'gtc' },
     };
@@ -113,8 +134,10 @@ export function unmapTimeInForce(duration?: { type: string }): TimeInForce {
     const tifMap: Record<string, TimeInForce> = {
         gtc: 'GTC',
         day: 'Day',
-        ioc: 'IOC',
-        fok: 'FOK',
+        [DURATION_IOC_MARKET]: 'IOC',
+        [DURATION_IOC_RESTING]: 'IOC',
+        [DURATION_FOK_MARKET]: 'FOK',
+        [DURATION_FOK_RESTING]: 'FOK',
         gtd: 'GTD',
     };
     return tifMap[duration.type] || 'GTC';
@@ -268,7 +291,7 @@ export function transformOrders(orders: TradeServerOrder[]): Order[] {
             ...parent,
             parentOrderId: order.poi?.toString() ?? '',
             parentPositionId: order.ppi?.toString() ?? '',
-            duration: mapTimeInForce(order.tif, order.tt),
+            duration: mapTimeInForce(order.tif, order.tt, orderType),
             time: formatTimestamp(order.C),
         };
     });
