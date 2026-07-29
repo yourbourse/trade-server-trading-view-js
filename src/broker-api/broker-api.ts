@@ -10,6 +10,7 @@ import {
     IBrokerConnectionAdapterHost,
     InstrumentInfo,
     IsTradableResult,
+    IWatchedValue,
     Order,
     PlaceOrderResult,
     Position,
@@ -27,6 +28,7 @@ import { TradeServerClient } from '@/trade-server-api/TradeServerClient';
 import { notificationService } from '@/utils/notificationService';
 import {
     OrderService,
+    OrderHistoryService,
     PositionService,
     TradeHistoryService,
     AccountService,
@@ -34,6 +36,12 @@ import {
     CurrencyConversionService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
+import {
+    applyDurationDefaults,
+    applyMarketOrderTypeDefault,
+} from '@/utils/tradingOrderDefaults.js';
+import { expandAllowedDurations } from '@/utils/orderDurationConfig.js';
+import { unescape } from 'lodash-es';
 
 const logger = createLogger({ prefix: '[BrokerAPI]' });
 
@@ -57,10 +65,14 @@ const logger = createLogger({ prefix: '[BrokerAPI]' });
 export class BrokerApi extends AbstractBrokerMinimal {
     private api: TradeServerClient;
     private orderService: OrderService;
+    private orderHistoryService: OrderHistoryService;
     private positionService: PositionService;
     private tradeHistoryService: TradeHistoryService;
     private accountService: AccountService;
     private updateService: UpdateService;
+    /** Watched value instance we subscribed to (must match for reliable unsubscribe). */
+    private orderPanelVisibility: IWatchedValue<boolean> | null = null;
+    private orderPanelVisibilityHandler: ((visible: boolean) => void) | null = null;
     private currencyConversionService: CurrencyConversionService;
 
     public constructor(
@@ -77,9 +89,15 @@ export class BrokerApi extends AbstractBrokerMinimal {
         });
 
         this.orderService = new OrderService(this.api);
+        this.orderHistoryService = new OrderHistoryService(this.api);
         this.positionService = new PositionService(this.api);
         this.tradeHistoryService = new TradeHistoryService(this.api);
-        this.accountService = new AccountService(this.api, this.host, this.tradeHistoryService);
+        this.accountService = new AccountService(
+            this.api,
+            this.host,
+            this.tradeHistoryService,
+            this.orderHistoryService
+        );
         this.currencyConversionService = new CurrencyConversionService(this.api);
         this.updateService = new UpdateService(this.api, this.host, {
             onGetCachedOrders: () => this.orderService.getCachedOrders(),
@@ -131,16 +149,15 @@ export class BrokerApi extends AbstractBrokerMinimal {
         // tv = monetary value of 1 tick move per lot, expressed in the symbol's
         // *profit* currency (symbolConfig.p). Divide by lotSize to get per-unit value.
         const lotSize = symbolConfig.l;
-        // Fallback follows TradingView's formula: pipSize * pointValue * accountCurrencyRate
-        // with pointValue=1, accountCurrencyRate=1 → pipValue = pipSize = mintick.
-        // Using 1 as fallback causes TradingView to display astronomical P&L on brackets
-        // because it multiplies pipValue × qty × lotSize internally.
+        // When tv is missing, fall back to mintick (TradingView: pipSize * pointValue
+        // with pointValue=1).
         const rawPipValue = symbolConfig.tv ? symbolConfig.tv / lotSize : mintick;
 
         // TradingView InstrumentInfo spec:
         // - pipValue: account currency (used for bracket P&L / Order Ticket)
         // - bigPointValue: contract currency (used for "Total Value (symbol currency)")
         // When profit currency differs from account currency, convert pipValue only.
+        // getRate returns 0 on failure → TradingView hides the Order info section and bracket Money P&L shows as 0.00.
         const profitCurrency = symbolConfig.p;
         await this.accountService.ensureAccountDataLoaded();
         const accountCurrency = this.accountService.getAccountCurrency();
@@ -179,6 +196,9 @@ export class BrokerApi extends AbstractBrokerMinimal {
             allowedDurations.push('fok');
         }
 
+        const expandedAllowedDurations =
+            allowedDurations.length > 0 ? expandAllowedDurations(allowedDurations) : allowedDurations;
+
         return {
             qty: {
                 min: symbolConfig.min ,
@@ -189,7 +209,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             pipSize,
             minTick: mintick,
             lotSize,
-            description: symbolConfig.d,
+            description: unescape(symbolConfig.d),
             brokerSymbol: symbolConfig.n,
             //type: 'forex',
             currency: symbolConfig.p,
@@ -199,7 +219,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
             // ("Total Value (symbol currency)" in the Order Ticket).
             bigPointValue: symbolConfig.tv ? symbolConfig.tv / mintick / lotSize : undefined,
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
-            ...(allowedDurations.length > 0 && { allowedDurations }),
+            ...(expandedAllowedDurations.length > 0 && { allowedDurations: expandedAllowedDurations }),
         };
     }
 
@@ -227,6 +247,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
             const order = this.orderService.getCachedOrders().find((o) => o.id === result.orderId);
             if (order) {
                 this.host.orderUpdate?.(order);
+                const sideLabel = order.side === Side.Buy ? 'Buy' : 'Sell';
+                notificationService.success('Order placed', `${sideLabel} ${order.qty} ${order.symbol} order placed successfully.`);
             }
         }
 
@@ -239,6 +261,27 @@ export class BrokerApi extends AbstractBrokerMinimal {
         this.assertFinitePrices(order);
 
         const bracketOrder = order as Order & { parentId?: string; parentType?: number };
+
+        if (bracketOrder.parentType !== undefined) {
+            const cached = this.orderService.getCachedOrders().find((o) => o.id === order.id);
+
+            if (cached && order.qty !== cached.qty) {
+                const message =
+                    'Quantity cannot be changed for stop loss / take profit orders — it always matches the parent order/position quantity.';
+                notificationService.error('Unable to modify order', message);
+                throw new Error(message);
+            }
+
+            if (
+                cached &&
+                (order.duration?.type !== cached.duration?.type || order.duration?.datetime !== cached.duration?.datetime)
+            ) {
+                const message = 'Time in force cannot be changed for stop loss / take profit orders.';
+                notificationService.error('Unable to modify order', message);
+                throw new Error(message);
+            }
+        }
+
         if (
             bracketOrder.parentType === ParentType.Position &&
             bracketOrder.parentId &&
@@ -263,6 +306,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
             cachedOrders[index] = { ...cachedOrders[index]!, ...order };
             this.orderService.setCachedOrders(cachedOrders);
             this.host.orderUpdate?.(cachedOrders[index]!);
+        } else {
+            logger.warn('modifyOrder: order missing from cache after update, forcing full refresh', order.id);
+            this.orderService.clearCache();
+            this.host.ordersFullUpdate?.();
         }
     }
 
@@ -280,6 +327,9 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (!updatedPosition) {
+            logger.warn('editPositionBrackets: position missing from cache after update, forcing full refresh', positionId);
+            this.positionService.clearCache();
+            this.host.positionsFullUpdate?.();
             return;
         }
 
@@ -368,12 +418,76 @@ export class BrokerApi extends AbstractBrokerMinimal {
         return this.accountService.getAccountsMetainfo();
     }
 
+    /**
+     * Reset persisted order ticket defaults for the symbol:
+     * order type → Market; Time in Force → IOC for Market, GTC otherwise
+     * (falling back to the next symbol-allowed, order-type-compatible duration).
+     */
+    public resetOrderTypeToMarket(symbol: string): void {
+        applyMarketOrderTypeDefault(symbol, this.host);
+        // Apply preferred TIFs immediately so the ticket does not briefly show a stale duration
+        // while symbolInfo (allowedDurations) is loading; refine when the symbol filter arrives.
+        applyDurationDefaults(symbol, undefined, this.host);
+        void this.refineDurationDefaultsForSymbol(symbol);
+    }
+
+    private async refineDurationDefaultsForSymbol(symbol: string): Promise<void> {
+        try {
+            const info = await this.symbolInfo(symbol);
+            if (info.allowedDurations?.length) {
+                applyDurationDefaults(symbol, info.allowedDurations, this.host);
+            }
+        } catch {
+            // Keep the sync broker-config defaults already applied above.
+        }
+    }
+
+    /**
+     * Keep the order ticket on Market + preferred TIF by default
+     * (TradingView otherwise remembers the last selections).
+     * Idempotent: a second call tears down the previous subscription before re-subscribing.
+     */
+    public setupMarketOrderTypeDefaults(getSymbol: () => string | undefined): void {
+        this.teardownMarketOrderTypeDefaults();
+
+        const applyForActiveSymbol = () => {
+            const symbol = getSymbol();
+            if (symbol) {
+                this.resetOrderTypeToMarket(symbol);
+            }
+        };
+
+        applyForActiveSymbol();
+
+        const orderPanelVisibility = this.host.orderPanelVisibility?.() ?? null;
+        if (orderPanelVisibility) {
+            this.orderPanelVisibilityHandler = (visible: boolean) => {
+                if (visible) {
+                    applyForActiveSymbol();
+                }
+            };
+            this.orderPanelVisibility = orderPanelVisibility;
+            orderPanelVisibility.subscribe(this.orderPanelVisibilityHandler);
+        }
+    }
+
+    /** Tear down subscriptions set up by {@link setupMarketOrderTypeDefaults}. */
+    public teardownMarketOrderTypeDefaults(): void {
+        if (this.orderPanelVisibility && this.orderPanelVisibilityHandler) {
+            this.orderPanelVisibility.unsubscribe(this.orderPanelVisibilityHandler);
+        }
+        this.orderPanelVisibility = null;
+        this.orderPanelVisibilityHandler = null;
+    }
+
     public chartContextMenuActions(
-        _context: TradeContext,
-        _options?: DefaultContextMenuActionsParams | undefined
+        context: TradeContext,
+        options?: DefaultContextMenuActionsParams | undefined
     ): Promise<ActionMetaInfo[]> {
-        void _options;
-        return this.host.defaultContextMenuActions(_context);
+        if (context.symbol) {
+            this.resetOrderTypeToMarket(context.symbol);
+        }
+        return this.host.defaultContextMenuActions(context, options);
     }
 
     async closePosition(positionId: string, amount?: number, confirmId?: string): Promise<void> {

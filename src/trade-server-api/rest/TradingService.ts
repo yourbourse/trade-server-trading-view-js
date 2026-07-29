@@ -37,10 +37,20 @@ import {
 import { executeAuthenticatedRequest, executeAuthenticatedDeleteWithPath } from '../../utils/api.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
+import { RequestCache } from '../../utils/requestCache.js';
+
+/** Positions change via WS; short TTL only collapses parallel broker init fetches. */
+const POSITIONS_CACHE_TTL_MS = 2_000;
 
 export class TradingService {
     private user: AuthUser;
     private log = logger.child('TradingService');
+    // undefined means the request failed and the error was swallowed by the
+    // interceptor; don't cache it, let the next caller retry.
+    private readonly positionsCache = new RequestCache<PositionsCollection | undefined>(
+        POSITIONS_CACHE_TTL_MS,
+        (data) => data !== undefined
+    );
 
     constructor(user: AuthUser) {
         this.user = user;
@@ -65,7 +75,13 @@ export class TradingService {
      */
     async placeOrder(order: PlaceOrder): Promise<Order | undefined> {
         this.log.info(`Placing order:`, order);
-        return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
+        try {
+            return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
+        } finally {
+            // After the mutation attempt: drop snapshots so a concurrent fetch that
+            // spanned the trade cannot keep serving pre-trade positions.
+            this.invalidatePositionsCache();
+        }
     }
 
     /**
@@ -200,10 +216,30 @@ export class TradingService {
     /**
      * Get open positions
      * POST /positions
+     *
+     * Concurrent requests with the same filter/token coalesce onto one in-flight HTTP call.
      */
     async getPositions(
         filter: OpenPositionRequestFilter = {},
         nextToken: string | null = null
+    ): Promise<PositionsCollection | undefined> {
+        const cacheKey = JSON.stringify([
+            filter.symbolName ?? null,
+            filter.sortOrder ?? null,
+            filter.maxResults ?? null,
+            nextToken,
+        ]);
+        return this.positionsCache.get(cacheKey, () => this.fetchPositions(filter, nextToken));
+    }
+
+    /** Drop cached snapshots after any mutation that can change open positions. */
+    private invalidatePositionsCache(): void {
+        this.positionsCache.clear();
+    }
+
+    private async fetchPositions(
+        filter: OpenPositionRequestFilter,
+        nextToken: string | null
     ): Promise<PositionsCollection | undefined> {
         const extraHeaders = nextToken ? { 'X-YB-NEXT-TOKEN': nextToken } : undefined;
         return await executeAuthenticatedRequest(this.user, sdkGetPositions, filter, extraHeaders);
@@ -266,7 +302,18 @@ export class TradingService {
             body.tp = takeProfit;
         }
 
-        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyPositionSltp, body, undefined, TradingService.MUTATION_OPTS);
+        try {
+            return await executeAuthenticatedRequest<ModifySltpResult>(
+                this.user,
+                modifyPositionSltp,
+                body,
+                undefined,
+                TradingService.MUTATION_OPTS
+            );
+        } finally {
+            // SL/TP is part of the position snapshot; drop after the mutation attempt.
+            this.invalidatePositionsCache();
+        }
     }
 
     // ==================== TRADES ====================
