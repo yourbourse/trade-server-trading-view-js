@@ -15,6 +15,7 @@ import {
     PlaceOrderResult,
     Position,
     PreOrder,
+    SymbolSpecificTradingOptions,
     TradeContext,
 } from '../../charting_library/charting_library';
 
@@ -221,6 +222,20 @@ export class BrokerApi extends AbstractBrokerMinimal {
             ...(allowedOrderTypes.length > 0 && { allowedOrderTypes }),
             ...(expandedAllowedDurations.length > 0 && { allowedDurations: expandedAllowedDurations }),
         };
+    }
+
+    async getSymbolSpecificTradingOptions(symbol: string): Promise<SymbolSpecificTradingOptions | undefined> {
+        try {
+            const symbolConfig = await this.api.marketData.getSymbolInfo(symbol);
+            const hasBrackets = symbolConfig.SLo || symbolConfig.TP;
+            return {
+                supportStopLoss: symbolConfig.SLo,
+                supportOrderBrackets: hasBrackets,
+                supportPositionBrackets: hasBrackets,
+            };
+        } catch {
+            return undefined;
+        }
     }
 
     async orders(): Promise<Order[]> {
