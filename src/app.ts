@@ -300,9 +300,7 @@ class TradingApp {
             supportOrderBrackets: true,
             supportPositionBrackets: true,
             supportPartialClosePosition: true,
-            showNotificationsLog: true,
-            // v32: chart lines read this without fallback — must be explicit
-            //supportStopLoss: true,
+            showNotificationsLog: true
         } as BrokerConfigFlags & {
             supportModifyOrderBrackets: boolean;
             supportModifyPositionBrackets: boolean;
