@@ -240,7 +240,7 @@ class TradingApp {
     /**
      * Initialize TradingView Widget
      */
-    initTradingViewWidget(symbol: string | null, savedData: object | null, storageKey: string) {
+    async initTradingViewWidget(symbol: string | null, savedData: object | null, storageKey: string) {
         // Ensure datafeed is initialized
         if (!this.datafeed) {
             throw new Error('Datafeed is not initialized');
@@ -300,8 +300,7 @@ class TradingApp {
             supportOrderBrackets: true,
             supportPositionBrackets: true,
             supportPartialClosePosition: true,
-            showNotificationsLog: true,
-	    
+            showNotificationsLog: true
         } as BrokerConfigFlags & {
             supportModifyOrderBrackets: boolean;
             supportModifyPositionBrackets: boolean;
@@ -361,39 +360,37 @@ class TradingApp {
         logger.debug('📊 TradingView widget created:', this.widget);
         logger.info('⏳ Waiting for widget initialization and broker_factory call...');
 
-        // Widget ready callback
-        this.widget!.onChartReady(() => {
-            logger.info('✅ TradingView Widget is ready');
-            if (!this.brokerAPI) {
-                logger.error('❌ Widget is ready but broker_factory was NEVER called!');
-                logger.error('This means TradingView did not recognize the datafeed as having quotes support');
-            } else {
-                logger.info('✅ Broker API is initialized:', this.brokerAPI);
-                this.brokerAPI.setupMarketOrderTypeDefaults(() => this.widget?.activeChart()?.symbol());
-                try {
-                    this.symbolChangedHandler = () => {
-                        const symbol = this.widget?.activeChart()?.symbol();
-                        if (symbol) {
-                            this.brokerAPI?.resetOrderTypeToMarket(symbol);
-                        }
-                    };
-                    this.widget!.activeChart().onSymbolChanged().subscribe(null, this.symbolChangedHandler);
-                } catch (err) {
-                    logger.warn('Could not subscribe to symbol changes for order type defaults:', err);
-                }
-            }
+        await this.widget!.chartReady();
 
-            this.autoSaveHandler = () => {
-                this.widget!.save((state: object) => {
-                    try {
-                        localStorage.setItem(storageKey, JSON.stringify(state));
-                    } catch (err) {
-                        logger.warn('Failed to persist chart state:', err);
+        logger.info('✅ TradingView Widget is ready');
+        if (!this.brokerAPI) {
+            logger.error('❌ Widget is ready but broker_factory was NEVER called!');
+            logger.error('This means TradingView did not recognize the datafeed as having quotes support');
+        } else {
+            logger.info('✅ Broker API is initialized:', this.brokerAPI);
+            this.brokerAPI.setupMarketOrderTypeDefaults(() => this.widget?.activeChart()?.symbol());
+            try {
+                this.symbolChangedHandler = () => {
+                    const symbol = this.widget?.activeChart()?.symbol();
+                    if (symbol) {
+                        this.brokerAPI?.resetOrderTypeToMarket(symbol);
                     }
-                });
-            };
-            this.widget!.subscribe('onAutoSaveNeeded', this.autoSaveHandler);
-        });
+                };
+                this.widget!.activeChart().onSymbolChanged().subscribe(null, this.symbolChangedHandler);
+            } catch (err) {
+                logger.warn('Could not subscribe to symbol changes for order type defaults:', err);
+            }
+        }
+
+        this.autoSaveHandler = async () => {
+            try {
+                const state = await this.widget!.save();
+                localStorage.setItem(storageKey, JSON.stringify(state));
+            } catch (err) {
+                logger.warn('Failed to persist chart state:', err);
+            }
+        };
+        this.widget!.subscribe('onAutoSaveNeeded', this.autoSaveHandler);
     }
 
     /**

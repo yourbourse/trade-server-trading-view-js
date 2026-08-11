@@ -8,7 +8,7 @@
 [![Vite](https://img.shields.io/badge/Vite-5.0-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![TradingView](https://img.shields.io/badge/TradingView-Charting%20Library-131722?logo=tradingview&logoColor=white)](https://www.tradingview.com/)
 [![WebSocket](https://img.shields.io/badge/WebSocket-Real--time-green?logo=socket.io&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
-![License](https://img.shields.io/badge/License-Proprietary-red.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
 
 <br>
 
@@ -27,7 +27,7 @@ A fully-featured trading terminal that connects TradingView's charting capabilit
 ---
 
 > [!WARNING]
-> **Supported TradingView Version:** This project is built and tested against **TradingView Charting Library v30.3.0** and the **Broker API v30.3.0** bundled with it. Using a different version may result in breaking changes, missing features, or unexpected behavior. Please ensure you are using a compatible version before proceeding.
+> **Supported TradingView Version:** This project is built and tested against **TradingView Charting Library v32.0.0** and the **Broker API v32.0.0** bundled with it. Using a different version may result in breaking changes, missing features, or unexpected behavior. Please ensure you are using a compatible version before proceeding.
 
 ---
 
@@ -266,6 +266,4 @@ See the [Development Guide](docs/DEVELOPMENT.md#regenerating-typescript-types-fr
 
 ## License
 
-Copyright (c) 2024-2026 YourBourse. All rights reserved.
-
-This software is proprietary and confidential. Unauthorized copying, distribution, modification, or use of this software, via any medium, is strictly prohibited.
+This project is licensed under the [MIT License](../LICENSE).
