@@ -11,6 +11,7 @@ import {
     IChartingLibraryWidget,
 } from 'charting_library/charting_library.js';
 import type {
+    AdditionalSymbolInfoField,
     BrokerConfigFlags,
     TradingTerminalWidgetOptions,
 } from 'charting_library/charting_library.js';
@@ -27,6 +28,27 @@ import { BROKER_ORDER_DURATIONS } from './utils/orderDurationConfig.js';
 import { initConnectionIndicator } from './ui/connectionIndicator.js';
 
 const logger = createLogger({ prefix: '[App]' });
+
+// Curated extra fields shown in the Security Info dialog. propertyName matches the
+// flat keys populated on ExtendedSymbolInfo in datafeed.ts's resolveSymbol().
+const ADDITIONAL_SYMBOL_INFO_FIELDS: AdditionalSymbolInfoField[] = [
+    { title: 'Lot Size', propertyName: 'lotSize' },
+    { title: 'Tick Value', propertyName: 'tickValue' },
+    { title: 'Tick Size', propertyName: 'tickSize' },
+    { title: 'Min Order Size', propertyName: 'minVolume' },
+    { title: 'Max Order Size', propertyName: 'maxVolume' },
+    { title: 'Order Size Step', propertyName: 'volumeStep' },
+    { title: 'Base Currency', propertyName: 'baseCurrency' },
+    { title: 'Profit Currency', propertyName: 'profitCurrency' },
+    { title: 'Margin Currency', propertyName: 'marginCurrency' },
+    { title: 'Margin %', propertyName: 'marginPercent' },
+    { title: 'Swap Long', propertyName: 'swapLong' },
+    { title: 'Swap Short', propertyName: 'swapShort' },
+    { title: 'Swap Mode', propertyName: 'swapMode' },
+    { title: 'Trade Mode', propertyName: 'tradeMode' },
+    { title: 'Allowed Order Types', propertyName: 'allowedOrderTypes' },
+    { title: 'Allowed Time In Force', propertyName: 'allowedTimeInForce' },
+];
 
 /**
  * Check if we're on the signin page
@@ -321,6 +343,7 @@ class TradingApp {
             autosize: CONFIG.tradingView.autosize,
             theme: CONFIG.tradingView.theme,
             widgetbar: CONFIG.tradingView.widgetbar,
+            additional_symbol_info_fields: ADDITIONAL_SYMBOL_INFO_FIELDS,
 
             // Additional settings
             timezone: 'Etc/UTC',

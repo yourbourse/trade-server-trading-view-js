@@ -28,8 +28,33 @@ import { CandleInterval } from '../schema/public-api/types.gen.js';
 import type { ResponseType } from '../trade-server-api/types/websocket-messages.js';
 import { createLogger } from '../utils/logger.js';
 import { unescape } from 'lodash-es';
+import { buildSessionString } from '../utils/symbolSessions.js';
+import { formatOrDash, formatAllowedOrderTypes, formatAllowedTimeInForce } from '../utils/symbolInfoFields.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
+
+/**
+ * LibrarySymbolInfo plus the curated extra fields surfaced in the Security Info
+ * dialog via `additional_symbol_info_fields` (see widgetOptions in app.ts).
+ */
+export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
+    lotSize: string;
+    tickValue: string;
+    tickSize: string;
+    minVolume: string;
+    maxVolume: string;
+    volumeStep: string;
+    baseCurrency: string;
+    profitCurrency: string;
+    marginCurrency: string;
+    marginPercent: string;
+    swapLong: string;
+    swapShort: string;
+    swapMode: string;
+    tradeMode: string;
+    allowedOrderTypes: string;
+    allowedTimeInForce: string;
+}
 
 /**
  * After the last L1 listener drops, keep the last quote briefly so Watchlist
@@ -168,17 +193,18 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         // Use TradeServerClient method which internally uses SDK
         this.api.marketData
             .getSymbolInfo(symbolName)
-            .then((symbolInfo: { n: string; d: string; dp?: number }) => {
+            .then((symbolInfo: Symbol) => {
                 // Calculate pricescale from decimal precision (dp)
                 // dp is the number of decimal places, pricescale = 10^dp
                 const pricescale = Math.pow(10, symbolInfo.dp || 5);
 
-                const symbolData: LibrarySymbolInfo = {
+                const symbolData: ExtendedSymbolInfo = {
                     name: symbolInfo.n,
                     description: unescape(symbolInfo.d),
                     type: 'forex',
-                    session: '24x7',
+                    session: buildSessionString(symbolInfo.t),
                     timezone: 'Etc/UTC',
+                    currency_code: symbolInfo.p,
                     // TODO: these 2 below field should be got from public api in the future
                     exchange: 'YourBourse',
                     listed_exchange: 'YourBourse',
@@ -190,6 +216,23 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     weekly_multipliers: ['1'],
                     monthly_multipliers: ['1'],
                     supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
+                    // Curated extra fields shown in the Security Info dialog (additional_symbol_info_fields in app.ts)
+                    lotSize: formatOrDash(symbolInfo.l),
+                    tickValue: formatOrDash(symbolInfo.tv),
+                    tickSize: formatOrDash(symbolInfo.tz),
+                    minVolume: formatOrDash(symbolInfo.min),
+                    maxVolume: formatOrDash(symbolInfo.max),
+                    volumeStep: formatOrDash(symbolInfo.i),
+                    baseCurrency: formatOrDash(symbolInfo.b),
+                    profitCurrency: formatOrDash(symbolInfo.p),
+                    marginCurrency: formatOrDash(symbolInfo.m),
+                    marginPercent: symbolInfo.pct !== undefined ? `${symbolInfo.pct}%` : '—',
+                    swapLong: formatOrDash(symbolInfo.swL),
+                    swapShort: formatOrDash(symbolInfo.swS),
+                    swapMode: formatOrDash(symbolInfo.swM),
+                    tradeMode: formatOrDash(symbolInfo.tm),
+                    allowedOrderTypes: formatAllowedOrderTypes(symbolInfo),
+                    allowedTimeInForce: formatAllowedTimeInForce(symbolInfo),
                 };
 
                 onSymbolResolvedCallback(symbolData);
