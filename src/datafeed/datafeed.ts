@@ -114,13 +114,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         });
         this.configurationData = {
             supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
-            exchanges: [
-                {
-                    value: 'YourBourse',
-                    name: 'YourBourse',
-                    desc: 'YourBourse Exchange',
-                },
-            ],
+            // No exchange filter is exposed in Symbol Search; an empty array hides it entirely.
+            exchanges: [],
             symbols_types: [],
         };
     }
@@ -205,9 +200,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     session: buildSessionString(symbolInfo.t),
                     timezone: 'Etc/UTC',
                     currency_code: symbolInfo.p,
-                    // TODO: these 2 below field should be got from public api in the future
-                    exchange: 'YourBourse',
-                    listed_exchange: 'YourBourse',
+                    // Empty: no broker/exchange name is displayed in the chart legend.
+                    exchange: '',
+                    listed_exchange: '',
                     minmov: 1,
                     pricescale: pricescale,
                     format: 'price',
@@ -360,7 +355,6 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 ch,
                 chp,
                 short_name: symbol,
-                exchange: 'YourBourse',
                 description: symbol,
                 lp: bid || ask || 0,
                 ask,
