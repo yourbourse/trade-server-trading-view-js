@@ -66,7 +66,9 @@ const CONFIG: AppConfig = {
         locale: 'en',
         // Suppress TradingView's built-in trading toasts (e.g. "Order rejected").
         // Custom host.showNotification() calls (our notificationService) still work.
-        disabled_features: ['trading_notifications'],
+        // Trade Server symbol names/descriptions are not guaranteed to be uppercase;
+        // disable forced uppercasing so the library displays them as returned.
+        disabled_features: ['trading_notifications', 'uppercase_instrument_names'],
         enabled_features: [],
         // Chart storage disabled to avoid CORS issues with saveload.tradingview.com
         fullscreen: false,
