@@ -223,9 +223,7 @@ export class TradeServerClient {
             clearTimeout(this.refreshTimer);
         }
         this.refreshTimer = setTimeout(() => void this.refreshNow(), delayMs);
-        this.log.info(
-            `Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`
-        );
+        this.log.info(`Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`);
     }
 
     /**

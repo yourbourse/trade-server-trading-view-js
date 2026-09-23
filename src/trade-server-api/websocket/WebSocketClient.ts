@@ -223,7 +223,11 @@ export class WebSocketClient {
                         // All such closures are session-ending — do not reconnect.
                         this.log.warn('WebSocket closed with policy violation (1008) — firing auth-failure listeners');
                         for (const cb of this.authFailureListeners) {
-                            try { cb(); } catch (err) { this.log.error('onAuthFailure listener threw', err); }
+                            try {
+                                cb();
+                            } catch (err) {
+                                this.log.error('onAuthFailure listener threw', err);
+                            }
                         }
                         // If 1008 arrives before onopen (rejected during the initial
                         // handshake), settle the in-flight connect() promise so its

@@ -76,7 +76,13 @@ export class TradingService {
     async placeOrder(order: PlaceOrder): Promise<Order | undefined> {
         this.log.info(`Placing order:`, order);
         try {
-            return await executeAuthenticatedRequest<Order>(this.user, sdkPlaceOrder, order, undefined, TradingService.MUTATION_OPTS);
+            return await executeAuthenticatedRequest<Order>(
+                this.user,
+                sdkPlaceOrder,
+                order,
+                undefined,
+                TradingService.MUTATION_OPTS
+            );
         } finally {
             // After the mutation attempt: drop snapshots so a concurrent fetch that
             // spanned the trade cannot keep serving pre-trade positions.
@@ -90,7 +96,13 @@ export class TradingService {
      */
     async modifyOrder(modifications: ModifyOrder): Promise<unknown> {
         this.log.info(`Modifying order: ${modifications.id}`);
-        return await executeAuthenticatedRequest(this.user, sdkModifyOrder, modifications, undefined, TradingService.MUTATION_OPTS);
+        return await executeAuthenticatedRequest(
+            this.user,
+            sdkModifyOrder,
+            modifications,
+            undefined,
+            TradingService.MUTATION_OPTS
+        );
     }
 
     /**
@@ -99,7 +111,12 @@ export class TradingService {
      */
     async cancelOrder(orderId: number): Promise<unknown> {
         this.log.info(`Canceling order: ${orderId}`);
-        return await executeAuthenticatedDeleteWithPath(this.user, sdkCancelOrder, { orderId: orderId.toString() }, TradingService.MUTATION_OPTS);
+        return await executeAuthenticatedDeleteWithPath(
+            this.user,
+            sdkCancelOrder,
+            { orderId: orderId.toString() },
+            TradingService.MUTATION_OPTS
+        );
     }
 
     /**
@@ -120,7 +137,13 @@ export class TradingService {
             body.tp = takeProfit;
         }
 
-        return await executeAuthenticatedRequest<ModifySltpResult>(this.user, modifyOrderSltp, body, undefined, TradingService.MUTATION_OPTS);
+        return await executeAuthenticatedRequest<ModifySltpResult>(
+            this.user,
+            modifyOrderSltp,
+            body,
+            undefined,
+            TradingService.MUTATION_OPTS
+        );
     }
 
     /**

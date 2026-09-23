@@ -322,7 +322,7 @@ class TradingApp {
             supportOrderBrackets: true,
             supportPositionBrackets: true,
             supportPartialClosePosition: true,
-            showNotificationsLog: true
+            showNotificationsLog: true,
         } as BrokerConfigFlags & {
             supportModifyOrderBrackets: boolean;
             supportModifyPositionBrackets: boolean;
@@ -425,7 +425,8 @@ class TradingApp {
 
         // Create elements safely to prevent XSS
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column;';
+        wrapper.style.cssText =
+            'display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column;';
 
         const heading = document.createElement('h2');
         heading.style.color = '#d32f2f';

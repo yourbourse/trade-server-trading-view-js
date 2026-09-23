@@ -65,11 +65,7 @@ export class MarketDataService {
         );
     }
 
-    private async fetchSymbolInfo(
-        symbol: string,
-        locale: string,
-        ifNoneMatch: string | null
-    ): Promise<Symbol> {
+    private async fetchSymbolInfo(symbol: string, locale: string, ifNoneMatch: string | null): Promise<Symbol> {
         this.log.debug(`Fetching symbol info: ${symbol}`);
         const headers: Record<string, unknown> = {
             ...getGETHeaders(this.user),
@@ -82,9 +78,9 @@ export class MarketDataService {
         const response = await getSymbol({
             client,
             headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
-                'X-YB-Locale'?: 'en';
-                'If-None-Match'?: string;
-            },
+                    'X-YB-Locale'?: 'en';
+                    'If-None-Match'?: string;
+                },
             path: {
                 symbolName: symbol,
             },
@@ -147,10 +143,10 @@ export class MarketDataService {
         const response = await getSymbols({
             client,
             headers: headers as { 'X-YB-API-Key': string } & TracingHeaders & {
-                'X-YB-NEXT-TOKEN'?: string;
-                'X-YB-Locale'?: 'en';
-                'If-None-Match'?: string;
-            },
+                    'X-YB-NEXT-TOKEN'?: string;
+                    'X-YB-Locale'?: 'en';
+                    'If-None-Match'?: string;
+                },
             query,
         });
 

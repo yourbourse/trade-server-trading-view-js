@@ -37,10 +37,7 @@ import {
     CurrencyConversionService,
 } from './services/index.js';
 import { createLogger } from '@/utils/logger.js';
-import {
-    applyDurationDefaults,
-    applyMarketOrderTypeDefault,
-} from '@/utils/tradingOrderDefaults.js';
+import { applyDurationDefaults, applyMarketOrderTypeDefault } from '@/utils/tradingOrderDefaults.js';
 import { expandAllowedDurations } from '@/utils/orderDurationConfig.js';
 import { unescape } from 'lodash-es';
 
@@ -202,7 +199,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         return {
             qty: {
-                min: symbolConfig.min ,
+                min: symbolConfig.min,
                 max: symbolConfig.max || 1e12,
                 step: symbolConfig.i,
             },
@@ -263,7 +260,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
             if (order) {
                 this.host.orderUpdate?.(order);
                 const sideLabel = order.side === Side.Buy ? 'Buy' : 'Sell';
-                notificationService.success('Order placed', `${sideLabel} ${order.qty} ${order.symbol} order placed successfully.`);
+                notificationService.success(
+                    'Order placed',
+                    `${sideLabel} ${order.qty} ${order.symbol} order placed successfully.`
+                );
             }
         }
 
@@ -289,7 +289,8 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
             if (
                 cached &&
-                (order.duration?.type !== cached.duration?.type || order.duration?.datetime !== cached.duration?.datetime)
+                (order.duration?.type !== cached.duration?.type ||
+                    order.duration?.datetime !== cached.duration?.datetime)
             ) {
                 const message = 'Time in force cannot be changed for stop loss / take profit orders.';
                 notificationService.error('Unable to modify order', message);
@@ -342,7 +343,10 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const updatedPosition = this.positionService.getCachedPositions().find((p) => p.id === positionId);
         if (!updatedPosition) {
-            logger.warn('editPositionBrackets: position missing from cache after update, forcing full refresh', positionId);
+            logger.warn(
+                'editPositionBrackets: position missing from cache after update, forcing full refresh',
+                positionId
+            );
             this.positionService.clearCache();
             this.host.positionsFullUpdate?.();
             return;
@@ -385,8 +389,7 @@ export class BrokerApi extends AbstractBrokerMinimal {
 
         const orderBrackets = this.orderService.getPositionBracketPrices(positionId);
 
-        const stopLoss =
-            'stopLoss' in brackets ? brackets.stopLoss : (position.stopLoss ?? orderBrackets.stopLoss);
+        const stopLoss = 'stopLoss' in brackets ? brackets.stopLoss : (position.stopLoss ?? orderBrackets.stopLoss);
         const takeProfit =
             'takeProfit' in brackets ? brackets.takeProfit : (position.takeProfit ?? orderBrackets.takeProfit);
 

@@ -122,8 +122,7 @@ const handleHttpStatusError = async (error: AxiosError, problemDetails: ProblemD
                     statusText: error.response?.statusText,
                 });
                 const title =
-                    problemDetails.title ||
-                    (status >= 400 && status < 500 ? `Error ${status}` : 'Server Error');
+                    problemDetails.title || (status >= 400 && status < 500 ? `Error ${status}` : 'Server Error');
                 notificationService.error(title, errorMessage ?? 'Unknown error', trace);
                 break;
             }

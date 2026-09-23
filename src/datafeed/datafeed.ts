@@ -254,7 +254,15 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         onErrorCallback: DatafeedErrorCallback
     ): void {
         const { from, to, countBack } = periodParams;
-        logger.debug('getBars:', symbolInfo.name, resolution, new Date(from * 1000), new Date(to * 1000), 'countBack:', countBack);
+        logger.debug(
+            'getBars:',
+            symbolInfo.name,
+            resolution,
+            new Date(from * 1000),
+            new Date(to * 1000),
+            'countBack:',
+            countBack
+        );
 
         const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
         if (!interval) {

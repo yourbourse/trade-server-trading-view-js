@@ -23,16 +23,7 @@ export type WebSocketMethod = 'subscribe' | 'unsubscribe' | 'ping' | 'pong';
  * WebSocket channel types
  */
 export type WebSocketChannel =
-    | 'orders'
-    | 'positions'
-    | 'balances'
-    | 'states'
-    | 'trades'
-    | 'transfers'
-    | 'ohlc'
-    | 'L1'
-    | 'L2'
-    | 'heartbeat';
+    'orders' | 'positions' | 'balances' | 'states' | 'trades' | 'transfers' | 'ohlc' | 'L1' | 'L2' | 'heartbeat';
 
 /**
  * Response types: snapshot, update, or delete

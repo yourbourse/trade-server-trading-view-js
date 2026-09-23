@@ -107,7 +107,12 @@ export function handleMutationError(
     const trace = getTraceReferenceFromError(error);
     const msg = extractErrorMessage(error);
     const finalMsg = msg ?? opts.throwFallback;
-    logger.error(`${opts.logContext}:`, finalMsg, `(${status ?? 'unknown'})`, trace.traceCode ?? trace.traceparent ?? '');
+    logger.error(
+        `${opts.logContext}:`,
+        finalMsg,
+        `(${status ?? 'unknown'})`,
+        trace.traceCode ?? trace.traceparent ?? ''
+    );
 
     if (status === undefined) {
         // Non-HTTP error (e.g. a logic-level throw before/without an HTTP response).

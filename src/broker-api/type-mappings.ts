@@ -159,10 +159,7 @@ function positionHasTakeProfitBracket(orders: TradeServerOrder[], positionId: nu
     return orders.some((order) => order.ppi === positionId && order.t === 'Limit');
 }
 
-function buildSyntheticStopOrder(
-    position: TradeServerPosition,
-    oppositeSide: 'buy' | 'sell'
-): TradeServerOrder {
+function buildSyntheticStopOrder(position: TradeServerPosition, oppositeSide: 'buy' | 'sell'): TradeServerOrder {
     return {
         id: -(position.id * 10 + 1),
         s: position.s,
@@ -178,10 +175,7 @@ function buildSyntheticStopOrder(
     };
 }
 
-function buildSyntheticTakeProfitOrder(
-    position: TradeServerPosition,
-    oppositeSide: 'buy' | 'sell'
-): TradeServerOrder {
+function buildSyntheticTakeProfitOrder(position: TradeServerPosition, oppositeSide: 'buy' | 'sell'): TradeServerOrder {
     return {
         id: -(position.id * 10 + 2),
         s: position.s,
@@ -244,10 +238,7 @@ export function enrichPositionBracketOrders(
  * `price || avgPrice || limitPrice` and does not fall back to `stopPrice`.
  * Mirror the stop trigger into `avgPrice` for unfilled stop orders.
  */
-function resolveTradingViewAvgPrice(
-    order: TradeServerOrder,
-    orderType: TradingViewOrderType
-): number | undefined {
+function resolveTradingViewAvgPrice(order: TradeServerOrder, orderType: TradingViewOrderType): number | undefined {
     if (order.ap !== undefined) {
         return order.ap;
     }

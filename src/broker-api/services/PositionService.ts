@@ -93,11 +93,7 @@ export class PositionService {
             const stopLoss = 'stopLoss' in brackets ? brackets.stopLoss : position.stopLoss;
             const takeProfit = 'takeProfit' in brackets ? brackets.takeProfit : position.takeProfit;
 
-            await this.api.trading.modifyPositionSLTP(
-                parseInt(positionId),
-                stopLoss ?? null,
-                takeProfit ?? null
-            );
+            await this.api.trading.modifyPositionSLTP(parseInt(positionId), stopLoss ?? null, takeProfit ?? null);
 
             const index = this.cachedPositions.findIndex((p) => p.id === positionId);
             if (index >= 0) {
