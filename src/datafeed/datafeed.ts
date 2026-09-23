@@ -189,6 +189,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.api.marketData
             .getSymbolInfo(symbolName)
             .then((symbolInfo: Symbol) => {
+                if (!symbolInfo.t || symbolInfo.t.length === 0) {
+                    onResolveErrorCallback('Symbol has no trading sessions');
+                    return;
+                }
+
                 // Calculate pricescale from decimal precision (dp)
                 // dp is the number of decimal places, pricescale = 10^dp
                 const pricescale = Math.pow(10, symbolInfo.dp || 5);

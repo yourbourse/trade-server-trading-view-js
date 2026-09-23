@@ -21,11 +21,7 @@ function toTradingViewTime(time: string): string {
     return time.replace(/:/g, '').slice(0, 4).padStart(4, '0');
 }
 
-export function buildSessionString(sessions: Session[] | undefined): string {
-    if (!sessions || sessions.length === 0) {
-        return '—';
-    }
-
+export function buildSessionString(sessions: Session[]): string {
     const rangesByDay = new Map<number, string[]>();
     for (const { d, s, e } of sessions) {
         const day = DAY_NUMBERS[d];
