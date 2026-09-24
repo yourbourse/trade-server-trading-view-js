@@ -106,7 +106,8 @@ const CONFIG: AppConfig = {
             M: 'M',
             // TradingView "1M" is one month; API "1M" is one minute — must map explicitly
             '1M': 'M',
-        } as Record<ResolutionString, CandleInterval>,
+            // Cast is needed only because ResolutionString is a branded string type.
+        } as Partial<Record<ResolutionString, CandleInterval>>,
         // Auto-subscribe to channels on connection
         autoSubscribe: {
             orders: true,

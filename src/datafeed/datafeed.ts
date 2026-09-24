@@ -293,7 +293,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             countBack
         );
 
-        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        const interval = CONFIG.websocket.intervalMapping[resolution];
         if (!interval) {
             logger.warn(`Unsupported resolution: ${resolution}`);
             onHistoryCallback([], { noData: true });
@@ -460,7 +460,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         logger.debug('subscribeBars:', symbolInfo.name, resolution, subscriberUID);
         this.ensureReconnectHandler();
 
-        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        const interval = CONFIG.websocket.intervalMapping[resolution];
         if (!interval) {
             logger.warn(`Unsupported resolution for subscribeBars: ${resolution}`);
             return;
