@@ -15,8 +15,8 @@ export function formatOrDash(value: FieldValue): string {
 }
 
 /**
- * Same as `formatOrDash`, but for fields where the API treats `0` or a missing
- * value as "no cap" (e.g. `max`; see broker-api.ts's `|| 1e12` fallback).
+ * Same as `formatOrDash`, but for fields this client treats as uncapped when
+ * `0` or absent (e.g. `max`), mirroring broker-api.ts's `max || 1e12` fallback.
  */
 export function formatOrUnlimited(value: FieldValue): string {
     if (value === 0 || value === undefined || value === null) {

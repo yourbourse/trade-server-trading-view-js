@@ -1,6 +1,8 @@
 /**
- * Converts Trade Server trading-session entries into a TradingView session string
- * (e.g. "0900-1700:23456"). See:
+ * Converts Trade Server `Session` entries into a TradingView session string
+ * (e.g. "0900-1700:23456"). The datafeed passes quote sessions (`Symbol.q`), since
+ * those reflect when price data exists; trade sessions (`Symbol.t`) only gate
+ * order execution. See:
  * https://www.tradingview.com/charting-library-docs/latest/connecting_data/time-and-sessions/Trading-Sessions
  */
 
