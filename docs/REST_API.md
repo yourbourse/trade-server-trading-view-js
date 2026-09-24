@@ -477,7 +477,7 @@ const symbol = await api.getSymbolInfo('EURUSD', 'en');
 //   d: 'Euro vs US Dollar',
 //   dp: 5,
 //   l: 100000,
-//   tm: 'FullTrading',
+//   tm: 'Full',
 //   min: 0.01,
 //   max: 10,
 //   // ... more configuration

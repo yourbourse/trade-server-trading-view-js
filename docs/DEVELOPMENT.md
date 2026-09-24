@@ -122,7 +122,7 @@ client/
 │   │   │   ├── AuthService.ts         #     Authentication (sign-in, refresh, logout)
 │   │   │   ├── TradingService.ts      #     Orders, positions, trade history
 │   │   │   ├── MarketDataService.ts   #     Symbols, candles, quotes, order book
-│   │   │   └── AccountService.ts      #     Balance, account state, limits, transfers
+│   │   │   └── AccountService.ts      #     Account state, limits, transfers
 │   │   ├── websocket/                 #   WebSocket infrastructure
 │   │   │   ├── WebSocketClient.ts     #     Connection, heartbeat, reconnect
 │   │   │   ├── SubscriptionManager.ts #     Pub/sub event bus

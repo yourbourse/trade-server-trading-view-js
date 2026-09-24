@@ -287,8 +287,10 @@ tradeServerAPI.subscribe('trade', (data) => {
     q: 0.1,                   // Quantity (in lots)
     S: "buy",                 // Side: buy/sell
     oi: 1263159154,           // Order ID that was filled
-    pi: 10098,                // Position ID (opened/modified/closed)
+    pi: 10098,                // Position ID (on a reversal: the NEW position)
+    rpi: 10097,               // Optional: position closed by a reversal
     pp: 1.23564,              // Position price
+    cq: 0.1,                  // Volume closed against the position (0 on open/increase)
     pl: 1230.04,              // Profit/loss
     sw: 0.13,                 // Swaps
     c: 0.04,                  // Commission
