@@ -29,7 +29,7 @@ import type { ResponseType } from '../trade-server-api/types/websocket-messages.
 import { createLogger } from '../utils/logger.js';
 import { unescape } from 'lodash-es';
 import { buildSessionString } from '../utils/symbolSessions.js';
-import { formatOrDash, formatAllowedOrderTypes, formatAllowedTimeInForce } from '../utils/symbolInfoFields.js';
+import { formatOrDash, formatOrUnlimited, formatAllowedOrderTypes, formatAllowedTimeInForce } from '../utils/symbolInfoFields.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
 
@@ -221,7 +221,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     tickValue: formatOrDash(symbolInfo.tv),
                     tickSize: formatOrDash(symbolInfo.tz),
                     minVolume: formatOrDash(symbolInfo.min),
-                    maxVolume: formatOrDash(symbolInfo.max),
+                    maxVolume: formatOrUnlimited(symbolInfo.max),
                     volumeStep: formatOrDash(symbolInfo.i),
                     baseCurrency: formatOrDash(symbolInfo.b),
                     profitCurrency: formatOrDash(symbolInfo.p),

@@ -12,6 +12,17 @@ export function formatOrDash(value: unknown): string {
     return String(value);
 }
 
+/**
+ * Same as `formatOrDash`, but for fields where the API uses `0` as a sentinel
+ * for "no cap" (e.g. `max`; see broker-api.ts's `|| 1e12` fallback).
+ */
+export function formatOrUnlimited(value: unknown): string {
+    if (value === 0) {
+        return 'Unlimited';
+    }
+    return formatOrDash(value);
+}
+
 export function formatAllowedOrderTypes(symbol: Symbol): string {
     const types: string[] = [];
     if (symbol.M) types.push('Market');
