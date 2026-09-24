@@ -5,7 +5,9 @@
 
 import type { Symbol } from '../schema/public-api/types.gen';
 
-export function formatOrDash(value: unknown): string {
+type FieldValue = string | number | null | undefined;
+
+export function formatOrDash(value: FieldValue): string {
     if (value === undefined || value === null || value === '') {
         return '—';
     }
@@ -16,7 +18,7 @@ export function formatOrDash(value: unknown): string {
  * Same as `formatOrDash`, but for fields where the API treats `0` or a missing
  * value as "no cap" (e.g. `max`; see broker-api.ts's `|| 1e12` fallback).
  */
-export function formatOrUnlimited(value: unknown): string {
+export function formatOrUnlimited(value: FieldValue): string {
     if (value === 0 || value === undefined || value === null) {
         return 'Unlimited';
     }
