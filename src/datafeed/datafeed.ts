@@ -68,6 +68,49 @@ export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
  */
 export type ExtendedSymbolInfoFieldKey = keyof Omit<ExtendedSymbolInfo, keyof LibrarySymbolInfo>;
 
+function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
+    // Calculate pricescale from decimal precision (dp)
+    // dp is the number of decimal places, pricescale = 10^dp
+    const pricescale = Math.pow(10, symbolInfo.dp || 5);
+
+    return {
+        name: symbolInfo.n,
+        description: unescape(symbolInfo.d),
+        type: 'forex',
+        session: buildSessionString(symbolInfo.q),
+        timezone: 'Etc/UTC',
+        currency_code: symbolInfo.p,
+        // Empty: no broker/exchange name is displayed in the chart legend.
+        exchange: '',
+        listed_exchange: '',
+        minmov: 1,
+        pricescale: pricescale,
+        format: 'price',
+        has_intraday: true,
+        has_weekly_and_monthly: true,
+        weekly_multipliers: ['1'],
+        monthly_multipliers: ['1'],
+        supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
+        // Curated extra fields shown in the Security Info dialog (additional_symbol_info_fields in app.ts)
+        lotSize: formatOrDash(symbolInfo.l),
+        tickValue: formatOrDash(symbolInfo.tv),
+        tickSize: formatOrDash(symbolInfo.tz),
+        minVolume: formatOrDash(symbolInfo.min),
+        maxVolume: formatOrUnlimited(symbolInfo.max),
+        volumeStep: formatOrDash(symbolInfo.i),
+        baseCurrency: formatOrDash(symbolInfo.b),
+        profitCurrency: formatOrDash(symbolInfo.p),
+        marginCurrency: formatOrDash(symbolInfo.m),
+        marginPercent: symbolInfo.pct !== undefined ? `${symbolInfo.pct}%` : '—',
+        swapLong: formatOrDash(symbolInfo.swL),
+        swapShort: formatOrDash(symbolInfo.swS),
+        swapMode: formatOrDash(symbolInfo.swM),
+        tradeMode: formatOrDash(symbolInfo.tm),
+        allowedOrderTypes: formatAllowedOrderTypes(symbolInfo),
+        allowedTimeInForce: formatAllowedTimeInForce(symbolInfo),
+    };
+}
+
 /**
  * After the last L1 listener drops, keep the last quote briefly so Watchlist
  * unsubscribe→resubscribe (or getQuotes) does not force a REST /quote round-trip.
@@ -207,48 +250,12 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     return;
                 }
 
-                // Calculate pricescale from decimal precision (dp)
-                // dp is the number of decimal places, pricescale = 10^dp
-                const pricescale = Math.pow(10, symbolInfo.dp || 5);
-
-                const symbolData: ExtendedSymbolInfo = {
-                    name: symbolInfo.n,
-                    description: unescape(symbolInfo.d),
-                    type: 'forex',
-                    session: buildSessionString(symbolInfo.q),
-                    timezone: 'Etc/UTC',
-                    currency_code: symbolInfo.p,
-                    // Empty: no broker/exchange name is displayed in the chart legend.
-                    exchange: '',
-                    listed_exchange: '',
-                    minmov: 1,
-                    pricescale: pricescale,
-                    format: 'price',
-                    has_intraday: true,
-                    has_weekly_and_monthly: true,
-                    weekly_multipliers: ['1'],
-                    monthly_multipliers: ['1'],
-                    supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
-                    // Curated extra fields shown in the Security Info dialog (additional_symbol_info_fields in app.ts)
-                    lotSize: formatOrDash(symbolInfo.l),
-                    tickValue: formatOrDash(symbolInfo.tv),
-                    tickSize: formatOrDash(symbolInfo.tz),
-                    minVolume: formatOrDash(symbolInfo.min),
-                    maxVolume: formatOrUnlimited(symbolInfo.max),
-                    volumeStep: formatOrDash(symbolInfo.i),
-                    baseCurrency: formatOrDash(symbolInfo.b),
-                    profitCurrency: formatOrDash(symbolInfo.p),
-                    marginCurrency: formatOrDash(symbolInfo.m),
-                    marginPercent: symbolInfo.pct !== undefined ? `${symbolInfo.pct}%` : '—',
-                    swapLong: formatOrDash(symbolInfo.swL),
-                    swapShort: formatOrDash(symbolInfo.swS),
-                    swapMode: formatOrDash(symbolInfo.swM),
-                    tradeMode: formatOrDash(symbolInfo.tm),
-                    allowedOrderTypes: formatAllowedOrderTypes(symbolInfo),
-                    allowedTimeInForce: formatAllowedTimeInForce(symbolInfo),
-                };
-
-                onSymbolResolvedCallback(symbolData);
+                try {
+                    onSymbolResolvedCallback(buildExtendedSymbolInfo(symbolInfo));
+                } catch (error: unknown) {
+                    logger.error('resolveSymbol: failed to build symbol info for', symbolName, error);
+                    onResolveErrorCallback('Failed to build symbol info');
+                }
             })
             .catch((error: unknown) => {
                 logger.error('Error resolving symbol:', error);
