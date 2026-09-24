@@ -201,9 +201,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.api.marketData
             .getSymbolInfo(symbolName)
             .then((symbolInfo: Symbol) => {
-                if (!symbolInfo.t || symbolInfo.t.length === 0) {
-                    logger.warn('resolveSymbol: symbol has no trading sessions:', symbolName);
-                    onResolveErrorCallback('Symbol has no trading sessions');
+                if (!symbolInfo.q || symbolInfo.q.length === 0) {
+                    logger.warn('resolveSymbol: symbol has no quote sessions:', symbolName);
+                    onResolveErrorCallback('Symbol has no quote sessions');
                     return;
                 }
 
@@ -215,7 +215,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     name: symbolInfo.n,
                     description: unescape(symbolInfo.d),
                     type: 'forex',
-                    session: buildSessionString(symbolInfo.t),
+                    session: buildSessionString(symbolInfo.q),
                     timezone: 'Etc/UTC',
                     currency_code: symbolInfo.p,
                     // Empty: no broker/exchange name is displayed in the chart legend.
