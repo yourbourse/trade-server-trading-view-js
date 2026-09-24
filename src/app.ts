@@ -10,14 +10,11 @@ import {
     IBrokerTerminal,
     IChartingLibraryWidget,
 } from 'charting_library/charting_library.js';
-import type {
-    AdditionalSymbolInfoField,
-    BrokerConfigFlags,
-    TradingTerminalWidgetOptions,
-} from 'charting_library/charting_library.js';
+import type { BrokerConfigFlags, TradingTerminalWidgetOptions } from 'charting_library/charting_library.js';
 
 import CONFIG, { POPULAR_SYMBOLS } from './config.js';
 import Datafeed from './datafeed/datafeed.js';
+import type { ExtendedSymbolInfoFieldKey } from './datafeed/datafeed.js';
 import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
 import { BrokerApi } from './broker-api/broker-api.js';
@@ -29,9 +26,10 @@ import { initConnectionIndicator } from './ui/connectionIndicator.js';
 
 const logger = createLogger({ prefix: '[App]' });
 
-// Curated extra fields shown in the Security Info dialog. propertyName matches the
-// flat keys populated on ExtendedSymbolInfo in datafeed.ts's resolveSymbol().
-const ADDITIONAL_SYMBOL_INFO_FIELDS: AdditionalSymbolInfoField[] = [
+// Curated extra fields shown in the Security Info dialog. propertyName is typed
+// against ExtendedSymbolInfoFieldKey so it stays in sync with the flat keys
+// populated on ExtendedSymbolInfo in datafeed.ts's resolveSymbol().
+const ADDITIONAL_SYMBOL_INFO_FIELDS: Array<{ title: string; propertyName: ExtendedSymbolInfoFieldKey }> = [
     { title: 'Lot Size', propertyName: 'lotSize' },
     { title: 'Tick Value', propertyName: 'tickValue' },
     { title: 'Tick Size', propertyName: 'tickSize' },

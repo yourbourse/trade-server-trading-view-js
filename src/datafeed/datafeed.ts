@@ -29,7 +29,12 @@ import type { ResponseType } from '../trade-server-api/types/websocket-messages.
 import { createLogger } from '../utils/logger.js';
 import { unescape } from 'lodash-es';
 import { buildSessionString } from '../utils/symbolSessions.js';
-import { formatOrDash, formatOrUnlimited, formatAllowedOrderTypes, formatAllowedTimeInForce } from '../utils/symbolInfoFields.js';
+import {
+    formatOrDash,
+    formatOrUnlimited,
+    formatAllowedOrderTypes,
+    formatAllowedTimeInForce,
+} from '../utils/symbolInfoFields.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
 
@@ -55,6 +60,13 @@ export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
     allowedOrderTypes: string;
     allowedTimeInForce: string;
 }
+
+/**
+ * Keys of the curated extra fields on `ExtendedSymbolInfo`. Used in app.ts to
+ * type-check `additional_symbol_info_fields`'s `propertyName` entries against
+ * this interface so the two stay in sync.
+ */
+export type ExtendedSymbolInfoFieldKey = keyof Omit<ExtendedSymbolInfo, keyof LibrarySymbolInfo>;
 
 /**
  * After the last L1 listener drops, keep the last quote briefly so Watchlist
