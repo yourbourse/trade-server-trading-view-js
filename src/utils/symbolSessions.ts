@@ -16,15 +16,29 @@ const DAY_NUMBERS: Record<Session['d'], number> = {
     Sat: 7,
 };
 
+// Source times are HH:MM:SS (e.g. "09:00:00", "24:00:00"); TradingView wants HHMM.
+const TIME_PATTERN = /^(\d{2}):(\d{2})(?::\d{2})?$/;
+
 function toTradingViewTime(time: string): string {
-    // Strip all colons in case the source time includes seconds (HH:MM:SS).
-    return time.replace(/:/g, '').slice(0, 4).padStart(4, '0');
+    const match = TIME_PATTERN.exec(time);
+    if (!match) {
+        throw new Error(`Invalid session time "${time}", expected HH:MM[:SS]`);
+    }
+    return `${match[1]}${match[2]}`;
+}
+
+function toTradingViewDay(d: string): number {
+    const day = DAY_NUMBERS[d as Session['d']];
+    if (day === undefined) {
+        throw new Error(`Invalid session day "${d}"`);
+    }
+    return day;
 }
 
 export function buildSessionString(sessions: Session[]): string {
     const rangesByDay = new Map<number, string[]>();
     for (const { d, s, e } of sessions) {
-        const day = DAY_NUMBERS[d];
+        const day = toTradingViewDay(d);
         const range = `${toTradingViewTime(s)}-${toTradingViewTime(e)}`;
         const ranges = rangesByDay.get(day);
         if (ranges) {
