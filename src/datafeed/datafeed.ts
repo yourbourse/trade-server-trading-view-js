@@ -27,6 +27,7 @@ import { TradeServerClient } from '../trade-server-api/TradeServerClient.js';
 import { CandleInterval } from '../schema/public-api/types.gen.js';
 import type { ResponseType } from '../trade-server-api/types/websocket-messages.js';
 import { createLogger } from '../utils/logger.js';
+import { getErrorStatus } from '../utils/apiError';
 import { unescape } from 'lodash-es';
 import { buildSessionString } from '../utils/symbolSessions.js';
 import {
@@ -250,16 +251,22 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                     return;
                 }
 
+                // Only the build is guarded: TradingView's callback may throw on its own
+                // (e.g. session parsing), and that must not also trigger the error callback.
+                let extendedInfo: ExtendedSymbolInfo;
                 try {
-                    onSymbolResolvedCallback(buildExtendedSymbolInfo(symbolInfo));
+                    extendedInfo = buildExtendedSymbolInfo(symbolInfo);
                 } catch (error: unknown) {
-                    logger.error('resolveSymbol: failed to build symbol info for', symbolName, error);
+                    logger.error('resolveSymbol: failed to build symbol info for', symbolName, symbolInfo, error);
                     onResolveErrorCallback('Failed to build symbol info');
+                    return;
                 }
+                onSymbolResolvedCallback(extendedInfo);
             })
             .catch((error: unknown) => {
-                logger.error('Error resolving symbol:', error);
-                onResolveErrorCallback('Symbol not found');
+                const status = getErrorStatus(error);
+                logger.error('Error resolving symbol:', symbolName, `(${status ?? 'unknown'})`, error);
+                onResolveErrorCallback(status === 404 ? 'Symbol not found' : 'Failed to load symbol info');
             });
     }
 

@@ -86,6 +86,10 @@ export class MarketDataService {
             },
         });
 
+        // Rethrow the ApiError as-is so callers can inspect `status` (404 vs auth/5xx).
+        if (response.error) {
+            throw response.error;
+        }
         if (!response.data) {
             throw new Error(`Failed to fetch symbol info for ${symbol}`);
         }
