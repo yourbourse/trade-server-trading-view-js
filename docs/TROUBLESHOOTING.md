@@ -317,13 +317,12 @@ console.log('WS State:', tradingApp.tradeServerClient.websocket.ws?.readyState);
 
 **Solutions:**
 - Reduce the number of subscribed symbols
-- Disable balances/trades auto-subscribe if not needed:
+- Disable trades auto-subscribe if not needed:
   ```typescript
   // In src/config.ts
   autoSubscribe: {
     orders: true,
     positions: true,
-    balances: false,    // Disable if not needed
     accountStates: true,
     trades: false       // Disable if not needed
   }

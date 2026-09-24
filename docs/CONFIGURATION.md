@@ -159,7 +159,6 @@ Channels automatically subscribed when the WebSocket connects:
 autoSubscribe: {
   orders: boolean;         // Working and inactive orders
   positions: boolean;      // Open positions with P&L updates
-  balances: boolean;       // Account balance changes
   accountStates: boolean;  // Equity, margin, P&L summary
   trades: boolean;         // Executed trade notifications
 }
@@ -169,7 +168,6 @@ autoSubscribe: {
 |---------|---------|-------------|
 | `orders` | `true` | Order snapshots and real-time updates |
 | `positions` | `true` | Position snapshots with live price/P&L |
-| `balances` | `false` | Balance updates per currency |
 | `accountStates` | `true` | Account equity, margin, unrealized P&L |
 | `trades` | `false` | Trade execution notifications |
 
@@ -283,7 +281,6 @@ const CONFIG: AppConfig = {
     autoSubscribe: {
       orders: true,
       positions: true,
-      balances: false,
       accountStates: true,
       trades: false
     },

@@ -7,7 +7,6 @@ import type {
     Order,
     Position,
     Trade,
-    Balance,
     AccountState,
     Candle,
     TransferHistory,
@@ -23,16 +22,7 @@ export type WebSocketMethod = 'subscribe' | 'unsubscribe' | 'ping' | 'pong';
  * WebSocket channel types
  */
 export type WebSocketChannel =
-    | 'orders'
-    | 'positions'
-    | 'balances'
-    | 'states'
-    | 'trades'
-    | 'transfers'
-    | 'ohlc'
-    | 'L1'
-    | 'L2'
-    | 'heartbeat';
+    'orders' | 'positions' | 'states' | 'trades' | 'transfers' | 'ohlc' | 'L1' | 'L2' | 'heartbeat';
 
 /**
  * Response types: snapshot, update, or delete
@@ -87,15 +77,6 @@ export interface PositionsUpdateMessage extends BaseWebSocketMessage {
     c: 'positions';
     t: ResponseType;
     d: Position[];
-}
-
-/**
- * Balances channel update message
- */
-export interface BalancesUpdateMessage extends BaseWebSocketMessage {
-    c: 'balances';
-    t: ResponseType;
-    d: Balance[];
 }
 
 /**
@@ -214,7 +195,6 @@ export type WebSocketMessage =
     | SubscriptionAckMessage
     | OrdersUpdateMessage
     | PositionsUpdateMessage
-    | BalancesUpdateMessage
     | AccountStatesUpdateMessage
     | TradesUpdateMessage
     | CandlesUpdateMessage
@@ -237,13 +217,6 @@ export interface OrdersSubscriptionParams {
 export interface PositionsSubscriptionParams {
     snapshot?: boolean;
     sendPriceUpdates?: boolean;
-}
-
-/**
- * Subscription parameters for balances channel
- */
-export interface BalancesSubscriptionParams {
-    snapshot?: boolean;
 }
 
 /**

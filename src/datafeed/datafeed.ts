@@ -27,9 +27,92 @@ import { TradeServerClient } from '../trade-server-api/TradeServerClient.js';
 import { CandleInterval } from '../schema/public-api/types.gen.js';
 import type { ResponseType } from '../trade-server-api/types/websocket-messages.js';
 import { createLogger } from '../utils/logger.js';
+import { getErrorStatus } from '../utils/apiError';
 import { unescape } from 'lodash-es';
+import { buildSessionString } from '../utils/symbolSessions.js';
+import {
+    formatOrDash,
+    formatOrUnlimited,
+    formatAllowedOrderTypes,
+    formatAllowedTimeInForce,
+} from '../utils/symbolInfoFields.js';
 
 const logger = createLogger({ prefix: '[Datafeed]' });
+
+/**
+ * Curated extra fields surfaced in the Security Info dialog via
+ * `additional_symbol_info_fields` (see widgetOptions in app.ts). All values are
+ * pre-formatted display strings.
+ */
+export interface SecurityInfoFields {
+    lotSize: string;
+    tickValue: string;
+    tickSize: string;
+    minVolume: string;
+    maxVolume: string;
+    volumeStep: string;
+    baseCurrency: string;
+    profitCurrency: string;
+    marginCurrency: string;
+    marginPercent: string;
+    swapLong: string;
+    swapShort: string;
+    swapMode: string;
+    tradeMode: string;
+    allowedOrderTypes: string;
+    allowedTimeInForce: string;
+}
+
+export type ExtendedSymbolInfo = LibrarySymbolInfo & SecurityInfoFields;
+
+/**
+ * Keys of `SecurityInfoFields`. Used in app.ts to type-check
+ * `additional_symbol_info_fields`'s `propertyName` entries so the two stay in sync.
+ */
+export type ExtendedSymbolInfoFieldKey = keyof SecurityInfoFields;
+
+function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
+    // dp is the number of decimal places, pricescale = 10^dp. dp = 0 is a valid
+    // value (whole-unit quotes), so only fall back when it is actually absent.
+    const pricescale = Math.pow(10, symbolInfo.dp ?? 5);
+
+    return {
+        name: symbolInfo.n,
+        description: unescape(symbolInfo.d),
+        type: 'forex',
+        session: buildSessionString(symbolInfo.q),
+        timezone: 'Etc/UTC',
+        currency_code: symbolInfo.p,
+        // Empty: no broker/exchange name is displayed in the chart legend.
+        exchange: '',
+        listed_exchange: '',
+        minmov: 1,
+        pricescale: pricescale,
+        format: 'price',
+        has_intraday: true,
+        has_weekly_and_monthly: true,
+        weekly_multipliers: ['1'],
+        monthly_multipliers: ['1'],
+        supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
+        // Curated extra fields shown in the Security Info dialog (additional_symbol_info_fields in app.ts)
+        lotSize: formatOrDash(symbolInfo.l),
+        tickValue: formatOrDash(symbolInfo.tv),
+        tickSize: formatOrDash(symbolInfo.tz),
+        minVolume: formatOrDash(symbolInfo.min),
+        maxVolume: formatOrUnlimited(symbolInfo.max),
+        volumeStep: formatOrDash(symbolInfo.i),
+        baseCurrency: formatOrDash(symbolInfo.b),
+        profitCurrency: formatOrDash(symbolInfo.p),
+        marginCurrency: formatOrDash(symbolInfo.m),
+        marginPercent: symbolInfo.pct !== undefined ? `${symbolInfo.pct}%` : '—',
+        swapLong: formatOrDash(symbolInfo.swL),
+        swapShort: formatOrDash(symbolInfo.swS),
+        swapMode: formatOrDash(symbolInfo.swM),
+        tradeMode: formatOrDash(symbolInfo.tm),
+        allowedOrderTypes: formatAllowedOrderTypes(symbolInfo),
+        allowedTimeInForce: formatAllowedTimeInForce(symbolInfo),
+    };
+}
 
 /**
  * After the last L1 listener drops, keep the last quote briefly so Watchlist
@@ -163,35 +246,29 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         // Use TradeServerClient method which internally uses SDK
         this.api.marketData
             .getSymbolInfo(symbolName)
-            .then((symbolInfo: { n: string; d: string; dp?: number }) => {
-                // Calculate pricescale from decimal precision (dp)
-                // dp is the number of decimal places, pricescale = 10^dp
-                const pricescale = Math.pow(10, symbolInfo.dp || 5);
+            .then((symbolInfo: Symbol) => {
+                if (!symbolInfo.q || symbolInfo.q.length === 0) {
+                    logger.warn('resolveSymbol: symbol has no quote sessions:', symbolName);
+                    onResolveErrorCallback('Symbol has no quote sessions');
+                    return;
+                }
 
-                const symbolData: LibrarySymbolInfo = {
-                    name: symbolInfo.n,
-                    description: unescape(symbolInfo.d),
-                    type: 'forex',
-                    session: '24x7',
-                    timezone: 'Etc/UTC',
-                    // Empty: no broker/exchange name is displayed in the chart legend.
-                    exchange: '',
-                    listed_exchange: '',
-                    minmov: 1,
-                    pricescale: pricescale,
-                    format: 'price',
-                    has_intraday: true,
-                    has_weekly_and_monthly: true,
-                    weekly_multipliers: ['1'],
-                    monthly_multipliers: ['1'],
-                    supported_resolutions: CONFIG.marketData.historyResolutions as ResolutionString[],
-                };
-
-                onSymbolResolvedCallback(symbolData);
+                // Only the build is guarded: TradingView's callback may throw on its own
+                // (e.g. session parsing), and that must not also trigger the error callback.
+                let extendedInfo: ExtendedSymbolInfo;
+                try {
+                    extendedInfo = buildExtendedSymbolInfo(symbolInfo);
+                } catch (error: unknown) {
+                    logger.error('resolveSymbol: failed to build symbol info for', symbolName, symbolInfo, error);
+                    onResolveErrorCallback('Failed to build symbol info');
+                    return;
+                }
+                onSymbolResolvedCallback(extendedInfo);
             })
             .catch((error: unknown) => {
-                logger.error('Error resolving symbol:', error);
-                onResolveErrorCallback('Symbol not found');
+                const status = getErrorStatus(error);
+                logger.error('Error resolving symbol:', symbolName, `(${status ?? 'unknown'})`, error);
+                onResolveErrorCallback(status === 404 ? 'Symbol not found' : 'Failed to load symbol info');
             });
     }
 
@@ -206,9 +283,17 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         onErrorCallback: DatafeedErrorCallback
     ): void {
         const { from, to, countBack } = periodParams;
-        logger.debug('getBars:', symbolInfo.name, resolution, new Date(from * 1000), new Date(to * 1000), 'countBack:', countBack);
+        logger.debug(
+            'getBars:',
+            symbolInfo.name,
+            resolution,
+            new Date(from * 1000),
+            new Date(to * 1000),
+            'countBack:',
+            countBack
+        );
 
-        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        const interval = CONFIG.websocket.intervalMapping[resolution];
         if (!interval) {
             logger.warn(`Unsupported resolution: ${resolution}`);
             onHistoryCallback([], { noData: true });
@@ -375,7 +460,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         logger.debug('subscribeBars:', symbolInfo.name, resolution, subscriberUID);
         this.ensureReconnectHandler();
 
-        const interval = CONFIG.websocket.intervalMapping[resolution] as CandleInterval | undefined;
+        const interval = CONFIG.websocket.intervalMapping[resolution];
         if (!interval) {
             logger.warn(`Unsupported resolution for subscribeBars: ${resolution}`);
             return;

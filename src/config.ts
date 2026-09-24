@@ -5,7 +5,7 @@
 import type { AppConfig } from './types/AppConfig';
 import type { TradingTerminalWidgetOptions } from '../charting_library/charting_library';
 import { ResolutionString } from '../charting_library/datafeed-api';
-import { Interval } from './schema/public-api';
+import { CandleInterval } from './schema/public-api';
 import { createLogger } from './utils/logger.js';
 import { TradeServerConfig } from './types/TradeServerConfig';
 
@@ -106,12 +106,12 @@ const CONFIG: AppConfig = {
             M: 'M',
             // TradingView "1M" is one month; API "1M" is one minute — must map explicitly
             '1M': 'M',
-        } as Record<ResolutionString, Interval>,
+            // Cast is needed only because ResolutionString is a branded string type.
+        } as Partial<Record<ResolutionString, CandleInterval>>,
         // Auto-subscribe to channels on connection
         autoSubscribe: {
             orders: true,
             positions: true,
-            balances: false,
             accountStates: true,
             trades: false,
         },

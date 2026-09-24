@@ -151,9 +151,7 @@ export function extractTraceparentFromRequestConfig(
 }
 
 /** Read X-YB-Trace-Code from an outgoing axios request config. */
-export function extractTraceCodeFromRequestConfig(
-    config: InternalAxiosRequestConfig | undefined
-): string | undefined {
+export function extractTraceCodeFromRequestConfig(config: InternalAxiosRequestConfig | undefined): string | undefined {
     return readHeaderFromRequestConfig(config, 'X-YB-Trace-Code');
 }
 
@@ -163,9 +161,7 @@ export type RequestTraceReference = {
 };
 
 /** Read tracing headers sent on a failed outbound request. */
-export function extractRequestTraceReference(
-    config: InternalAxiosRequestConfig | undefined
-): RequestTraceReference {
+export function extractRequestTraceReference(config: InternalAxiosRequestConfig | undefined): RequestTraceReference {
     return {
         traceparent: extractTraceparentFromRequestConfig(config),
         traceCode: extractTraceCodeFromRequestConfig(config),
@@ -179,10 +175,7 @@ export function extractTraceIdFromTraceparent(traceparent: string): string | und
 }
 
 /** Resolve the trace reference for notifications from request headers. */
-export function resolveTraceReference(
-    traceparent?: string,
-    traceCode?: string
-): string | undefined {
+export function resolveTraceReference(traceparent?: string, traceCode?: string): string | undefined {
     if (traceCode) {
         return traceCode;
     }
@@ -196,11 +189,7 @@ export function resolveTraceReference(
 }
 
 /** Append a short trace reference for support / log lookup in TradingView notifications. */
-export function formatNotificationWithTraceparent(
-    text: string,
-    traceparent?: string,
-    traceCode?: string
-): string {
+export function formatNotificationWithTraceparent(text: string, traceparent?: string, traceCode?: string): string {
     const reference = resolveTraceReference(traceparent, traceCode);
     if (!reference) {
         return text;

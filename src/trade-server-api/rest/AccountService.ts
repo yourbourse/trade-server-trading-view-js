@@ -1,10 +1,9 @@
 /**
  * Account Service
- * Handles account-related API calls (balance, state, limits, transfers)
+ * Handles account-related API calls (state, limits, transfers)
  */
 
 import type {
-    Balance,
     AccountState,
     Limits,
     Now,
@@ -14,10 +13,9 @@ import type {
 } from '../../schema/public-api/types.gen.js';
 import {
     getState,
-    getBalances as sdkGetBalances,
     getLimits as sdkGetLimits,
     getTransfersHistory,
-    getNow,
+    healthCheck as sdkHealthCheck,
 } from '../../schema/public-api/sdk.gen.js';
 import { executeAuthenticatedGet, executeAuthenticatedRequest } from '../../utils/api.js';
 import { AuthUser } from '../../types/AuthUser.js';
@@ -38,15 +36,6 @@ export class AccountService {
     async getAccountInfo(): Promise<AccountState | undefined> {
         this.log.debug('Fetching account info');
         return await executeAuthenticatedGet(this.user, getState);
-    }
-
-    /**
-     * Get account balance(s)/collateral
-     * GET /account/balances
-     */
-    async getBalance(): Promise<Balance[] | undefined> {
-        this.log.debug('Fetching balance');
-        return await executeAuthenticatedGet(this.user, sdkGetBalances);
     }
 
     /**
@@ -87,24 +76,11 @@ export class AccountService {
     }
 
     /**
-     * Get comprehensive account summary (convenience method)
-     * Fetches both account state and balances in parallel
-     */
-    async getAccountSummary(): Promise<{ state: AccountState; balances: Balance[] }> {
-        this.log.debug('Fetching account summary');
-        const [state, balances] = await Promise.all([this.getAccountInfo(), this.getBalance()]);
-        if (!state || !balances) {
-            throw new Error('Failed to fetch account summary');
-        }
-        return { state, balances };
-    }
-
-    /**
      * Health check / Get server time
      * GET /now
      */
     async healthCheck(): Promise<Now | undefined> {
-        return await executeAuthenticatedGet(this.user, getNow);
+        return await executeAuthenticatedGet(this.user, sdkHealthCheck);
     }
 
     /**

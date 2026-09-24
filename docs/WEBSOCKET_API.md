@@ -97,14 +97,13 @@ All WebSocket messages follow this structure:
 |---------|------|-------------|----------|----------|
 | [`orders`](#1-orders-channel-orders) | Account | Order updates | ✅ | ✅ |
 | [`positions`](#2-positions-channel-positions) | Account | Position updates | ✅ | ✅ |
-| [`balances`](#3-balances-channel-balances) | Account | Balance updates | ✅ | ✅ |
-| [`states`](#4-account-states-channel-states) | Account | Account state | ✅ | ✅ |
-| [`trades`](#5-trades-channel-trades) | Account | Trade executions | ❌ | ✅ |
-| [`transfers`](#6-transfers-channel-transfers) | Account | Transfer history | ✅ | ✅ |
-| [`ohlc`](#7-candles-channel-ohlc) | Market Data | OHLCV candles | ✅ | ✅ |
-| [`L1`](#8-quotes-channel-l1) | Market Data | Top of book | ✅ | ✅ |
-| [`L2`](#9-order-book-channel-l2) | Market Data | Order book depth | ✅ | ✅ |
-| [`heartbeat`](#10-heartbeat-channel) | System | Server heartbeat | ❌ | ✅ |
+| [`states`](#3-account-states-channel-states) | Account | Account state | ✅ | ✅ |
+| [`trades`](#4-trades-channel-trades) | Account | Trade executions | ❌ | ✅ |
+| [`transfers`](#5-transfers-channel-transfers) | Account | Transfer history | ✅ | ✅ |
+| [`ohlc`](#6-candles-channel-ohlc) | Market Data | OHLCV candles | ✅ | ✅ |
+| [`L1`](#7-quotes-channel-l1) | Market Data | Top of book | ✅ | ✅ |
+| [`L2`](#8-order-book-channel-l2) | Market Data | Order book depth | ✅ | ✅ |
+| [`heartbeat`](#9-heartbeat-channel) | System | Server heartbeat | ❌ | ✅ |
 
 ---
 
@@ -215,44 +214,7 @@ tradeServerAPI.subscribe('position_update', (data) => {
 }
 ```
 
-### 3. Balances Channel (`balances`)
-
-Account balance and collateral updates.
-
-**Subscribe:**
-```javascript
-await tradeServerAPI.subscribeToBalances(snapshot = true);
-```
-
-**Unsubscribe:**
-```javascript
-await tradeServerAPI.unsubscribeFromBalances();
-```
-
-**Listen for Updates:**
-```javascript
-tradeServerAPI.subscribe('balances', (data) => {
-    console.log('Balance update:', data.type, data.data);
-});
-
-tradeServerAPI.subscribe('balance_update', (data) => {
-    console.log('Balance update:', data);
-});
-```
-
-**Balance Object Structure:**
-```javascript
-{
-    a: "BTC",                 // Asset
-    d: "Bitcoin",             // Asset description
-    t: 1000,                  // Total amount
-    av: 10,                   // Available balance
-    r: 0.5,                   // Liquidity margin rate (default: 1.0)
-    p: 104.24                 // Market price (if applicable)
-}
-```
-
-### 4. Account States Channel (`states`)
+### 3. Account States Channel (`states`)
 
 Trading account state including equity, margin, and P&L.
 
@@ -290,7 +252,7 @@ tradeServerAPI.subscribe('account_state_update', (data) => {
 }
 ```
 
-### 5. Trades Channel (`trades`)
+### 4. Trades Channel (`trades`)
 
 Real-time trade execution updates.
 
@@ -325,8 +287,10 @@ tradeServerAPI.subscribe('trade', (data) => {
     q: 0.1,                   // Quantity (in lots)
     S: "buy",                 // Side: buy/sell
     oi: 1263159154,           // Order ID that was filled
-    pi: 10098,                // Position ID (opened/modified/closed)
+    pi: 10098,                // Position ID (on a reversal: the NEW position)
+    rpi: 10097,               // Optional: position closed by a reversal
     pp: 1.23564,              // Position price
+    cq: 0.1,                  // Volume closed against the position (0 on open/increase)
     pl: 1230.04,              // Profit/loss
     sw: 0.13,                 // Swaps
     c: 0.04,                  // Commission
@@ -337,7 +301,7 @@ tradeServerAPI.subscribe('trade', (data) => {
 }
 ```
 
-### 6. Transfers Channel (`transfers`)
+### 5. Transfers Channel (`transfers`)
 
 Cash/asset transfer updates.
 
@@ -379,7 +343,7 @@ tradeServerAPI.subscribe('transfers', (data) => {
 }
 ```
 
-### 7. Candles Channel (`ohlc`)
+### 6. Candles Channel (`ohlc`)
 
 OHLCV (candlestick) data updates.
 
@@ -424,7 +388,7 @@ tradeServerAPI.subscribe('candles', (data) => {
 }
 ```
 
-### 8. Quotes Channel (L1)
+### 7. Quotes Channel (L1)
 
 Top of book (best bid/ask) updates.
 
@@ -471,7 +435,7 @@ tradeServerAPI.subscribe('ticker', (data) => {
 }
 ```
 
-### 9. Order Book Channel (L2)
+### 8. Order Book Channel (L2)
 
 Depth of market (order book) updates.
 
@@ -518,7 +482,7 @@ tradeServerAPI.subscribe('book', (data) => {
 }
 ```
 
-### 10. Heartbeat Channel
+### 9. Heartbeat Channel
 
 Server sends heartbeat messages approximately once per second when no other updates are occurring.
 
@@ -586,7 +550,6 @@ try {
     // Account updates
     await tradeServerAPI.subscribeToOrders(true);
     await tradeServerAPI.subscribeToPositions(true, true);
-    await tradeServerAPI.subscribeToBalances(true);
     await tradeServerAPI.subscribeToAccountStates(true);
     await tradeServerAPI.subscribeToTrades();
     
@@ -611,11 +574,6 @@ tradeServerAPI.subscribe('position_update', (data) => {
     // Update UI with position changes
 });
 
-tradeServerAPI.subscribe('balance_update', (data) => {
-    console.log('Balance update:', data);
-    // Update UI with balance changes
-});
-
 tradeServerAPI.subscribe('ticker', (data) => {
     console.log(`${data.symbol}: Bid ${data.bid}, Ask ${data.ask}`);
     // Update TradingView chart with new price
@@ -634,7 +592,6 @@ The WebSocket implementation is already integrated with the TradingView datafeed
 1. **Real-time Price Updates**: Quote updates are automatically forwarded to TradingView charts
 2. **Order Updates**: Order changes trigger UI updates in the trading panel
 3. **Position Updates**: Position changes update the account panel
-4. **Balance Updates**: Balance changes update account equity display
 
 The `datafeed/` and `broker-api/` modules automatically subscribe to the necessary channels and handle the data transformations for TradingView.
 
@@ -647,7 +604,6 @@ The WebSocket implementation is already integrated with the TradingView datafeed
 1. **Price Updates**: Quote updates automatically forward to TradingView charts
 2. **Order Updates**: Order changes trigger UI updates in the trading panel
 3. **Position Updates**: Position changes update the account panel
-4. **Balance Updates**: Balance changes update account equity display
 
 The `src/datafeed/` and `src/broker-api/` modules automatically subscribe to the necessary channels and handle the data transformations for TradingView.
 

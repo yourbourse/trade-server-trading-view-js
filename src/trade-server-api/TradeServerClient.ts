@@ -17,7 +17,6 @@ import { CandleInterval } from '../schema/public-api/types.gen.js';
 import type {
     OrdersSubscriptionParams,
     PositionsSubscriptionParams,
-    BalancesSubscriptionParams,
     AccountStatesSubscriptionParams,
     TransfersSubscriptionParams,
     CandlesSubscriptionParams,
@@ -43,7 +42,6 @@ const TOKEN_REFRESH_SAFETY_MARGIN_MS = 15 * 60 * 1000;
  * await client.auth.signIn('username');
  * const orders = await client.trading.getOrders();
  * const symbols = await client.marketData.getSymbols();
- * const balance = await client.account.getBalance();
  *
  * // Subscribe to WebSocket events
  * client.subscriptions.subscribe('orders', (data) => console.log(data));
@@ -223,9 +221,7 @@ export class TradeServerClient {
             clearTimeout(this.refreshTimer);
         }
         this.refreshTimer = setTimeout(() => void this.refreshNow(), delayMs);
-        this.log.info(
-            `Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`
-        );
+        this.log.info(`Token refresh scheduled in ${delayMs}ms (expires at ${new Date(expirationMs).toISOString()})`);
     }
 
     /**
@@ -453,16 +449,6 @@ export class TradeServerClient {
             );
         }
 
-        if (autoSubscribe.balances) {
-            this.log.debug('Auto-subscribing to balances channel');
-            subscriptions.push(
-                this.subscribeToBalances({ snapshot: true }).catch((err) => {
-                    this.log.error('Failed to subscribe to balances', err);
-                    this.notifySubscriptionDegraded('balances');
-                })
-            );
-        }
-
         if (autoSubscribe.accountStates) {
             this.log.debug('Auto-subscribing to account states channel');
             subscriptions.push(
@@ -514,20 +500,6 @@ export class TradeServerClient {
      */
     async unsubscribeFromPositions(): Promise<unknown> {
         return this.websocket.unsubscribeFromChannel('positions');
-    }
-
-    /**
-     * Subscribe to balances channel
-     */
-    async subscribeToBalances(params: BalancesSubscriptionParams = {}): Promise<unknown> {
-        return this.websocket.subscribeToChannel('balances', params as Record<string, unknown>);
-    }
-
-    /**
-     * Unsubscribe from balances channel
-     */
-    async unsubscribeFromBalances(): Promise<unknown> {
-        return this.websocket.unsubscribeFromChannel('balances');
     }
 
     /**

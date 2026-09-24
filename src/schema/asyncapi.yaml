@@ -1,10 +1,20 @@
 asyncapi: 3.0.0
 info:
   title: Your Bourse Trading Platform WebSocket API
-  version: 0.0.1251
+  version: 26.9.50
+  tags:
+    - name: Market Data
+      description: Real-time market data streams
+    - name: Trading
+      description: Trading-related messages and updates
+    - name: Account
+      description: Account and balance updates
+    - name: Orders
+      description: Order status and trade executions
+    - name: System
+      description: System and heartbeat messages
   description: >-
     [Download](/ws-api/asyncapi.yaml) AsyncAPI specification.
-
 
     # General API Information
 
@@ -22,6 +32,12 @@ info:
       * When you receive a `ping`, you must send a pong with a copy of `ping`'s payload as soon as possible.
       * Unsolicited `pong` frames are allowed, but will not prevent disconnection. It is recommended that the payload for these `pong` frames are empty.
 
+    Each message you send must be a single, unfragmented WebSocket frame (with the `FIN` bit set). Fragmented inbound messages are **not** supported:
+      * A data frame sent with `FIN = 0`, or any continuation (`0x0`) frame, will cause the connection to be closed with WebSocket close code `1003` (unsupported data).
+      * Control commands are small and always fit in a single frame, so a standard WebSocket client requires no special handling to comply.
+      * Each inbound frame must also fit within a server-side maximum frame size. A single frame larger than this limit is rejected and the connection is closed with WebSocket close code `1009` (message too big). The limit is set comfortably above the size of any valid control command, so well-formed clients never reach it.
+      * When **the server** closes the connection **gracefully** it sends its **own** WebSocket close code — `1000` (normal close), or one of `1002` (protocol error), `1003` (unsupported data — e.g. a fragmented frame), `1007` (invalid encoding), `1008` (policy — e.g. a rejected command), `1009` (message too big), or `1011` (internal server error) — and it **never** echoes the close code or reason your client sent. An abnormal teardown (an unresponsive client, a stalled or wedged connection, or a transport error) may instead close the connection **without** a close frame, so your client sees `1006` (abnormal closure) — exactly as with any WebSocket server. A standard WebSocket client needs no special handling in either case.
+
     Lists are returned in **chronological order**, unless noted otherwise.
 
 
@@ -35,7 +51,8 @@ info:
     # Rate Limits
 
 
-    A single connection has a limit of 5 incoming messages per second:
+    A single connection may send up to 64 incoming messages per second. An
+    incoming message is any of:
 
     * `PING` frame
 
@@ -44,9 +61,12 @@ info:
     * JSON controlled message (e.g. `subscribe`, `unsubscribe`)
 
 
-    A connection that goes beyond the limit will be disconnected; IPs that are
-    repeatedly disconnected may be banned. IP bans are tracked and scale in
-    duration for repeat offenders.
+    Excess inbound is throttled, not disconnected: if you exceed this rate the
+    server briefly pauses reading from your connection and resumes shortly
+    after. The connection is **not** dropped for exceeding the rate, so
+    well-behaved clients are never disconnected for occasional bursts. (IPs
+    that are repeatedly disconnected for other reasons may still be banned; IP
+    bans are tracked and scale in duration for repeat offenders.)
 
 
     A single connection can listen to a maximum of 256 streams.
@@ -159,9 +179,16 @@ info:
 
 servers:
   UAT:
-    host: https://<IP_address>:<port>/ws/v1
+    host: '{host}:{port}/ws/v1'
     protocol: wss
     description: Trade server WebSocket API endpoint
+    variables:
+      host:
+        default: <IP_address>
+        description: Trade server IP address or hostname.
+      port:
+        default: '<port>'
+        description: Trade server port.
 channels:
   trades:
     address: trades
@@ -200,17 +227,6 @@ channels:
         $ref: '#/components/messages/Orders'
       OrdersSubscriptionRequestAck:
         $ref: '#/components/messages/OrdersSubscriptionRequestAck'
-  balances:
-    address: balances
-    messages:
-      BalancesSubscribeRequest:
-        $ref: '#/components/messages/BalancesSubscribeRequest'
-      BalancesUnsubscribeRequest:
-        $ref: '#/components/messages/BalancesUnsubscribeRequest'
-      Balances:
-        $ref: '#/components/messages/Balances'
-      BalancesSubscriptionRequestAck:
-        $ref: '#/components/messages/BalancesSubscriptionRequestAck'
   states:
     address: states
     messages:
@@ -290,22 +306,6 @@ channels:
       Pong:
         $ref: '#/components/messages/Pong'
 operations:
-  BalancesSubscription:
-    action: receive
-    channel:
-      $ref: '#/channels/balances'
-    summary: Subscribe for balance/collateral updates.
-    messages:
-      - $ref: '#/channels/balances/messages/BalancesSubscribeRequest'
-      - $ref: '#/channels/balances/messages/BalancesUnsubscribeRequest'
-  Balances:
-    action: send
-    channel:
-      $ref: '#/channels/balances'
-    summary: Receive balance/collateral updates.
-    messages:
-      - $ref: '#/channels/balances/messages/BalancesSubscriptionRequestAck'
-      - $ref: '#/channels/balances/messages/Balances'
   AccountStatesSubscription:
     action: receive
     channel:
@@ -522,30 +522,6 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/AccountStates'
-    BalancesSubscribeRequest:
-      name: BalancesSubscribeRequest
-      title: Subscribe for balance/collateral updates.
-      contentType: application/json
-      payload:
-        $ref: '#/components/schemas/BalancesSubscribeRequest'
-    BalancesUnsubscribeRequest:
-      name: BalancesUnsubscribeRequest
-      title: Unsubscribe from balance/collateral updates.
-      contentType: application/json
-      payload:
-        $ref: '#/components/schemas/BalancesUnsubscribeRequest'
-    BalancesSubscriptionRequestAck:
-      name: BalancesSubscriptionRequestAck
-      title: Subscription request acknowledgement
-      contentType: application/json
-      payload:
-        $ref: '#/components/schemas/BalancesSubscriptionRequestAck'
-    Balances:
-      name: Balances
-      title: Balance/collateral updates
-      contentType: application/json
-      payload:
-        $ref: '#/components/schemas/Balances'
     TransfersSubscribeRequest:
       name: TransfersSubscribeRequest
       title: Subscribe for cash/asset transfer updates.
@@ -881,8 +857,10 @@ components:
         s:
           $ref: '#/components/schemas/SymbolName'
         qs:
+          description: Quote session status.
           $ref: '#/components/schemas/SymbolSessionStatus'
         ts:
+          description: Trade session status.
           $ref: '#/components/schemas/SymbolSessionStatus'
       required:
         - s
@@ -891,130 +869,6 @@ components:
         Market session status item. In snapshot messages both `qs` and `ts`
         are always present. In update messages only the field(s) that changed
         are included (partial update).
-    BalancesChannel:
-      type: string
-      description: Channel name (will always be `balances`).
-      enum:
-        - balances
-      example: balances
-    BalancesSubscribeRequest:
-      title: BalancesSubscribeRequest
-      type: object
-      properties:
-        m:
-          $ref: '#/components/schemas/SubscribeMethod'
-        c:
-          $ref: '#/components/schemas/BalancesChannel'
-        p:
-          type: object
-          properties:
-            snapshot:
-              description: >-
-                `true` - send snapshot of all assets held in this account;
-                `false` - updates only.
-              type: boolean
-              default: false
-              example: true
-          additionalProperties: false
-        h:
-          $ref: '#/components/schemas/CommonHeaders'
-        reqId:
-          $ref: '#/components/schemas/reqId'
-      required:
-        - m
-        - c
-        - p
-        - h
-      additionalProperties: false
-    BalancesUnsubscribeRequest:
-      title: BalancesUnsubscribeRequest
-      type: object
-      properties:
-        m:
-          $ref: '#/components/schemas/UnsubscribeMethod'
-        c:
-          $ref: '#/components/schemas/BalancesChannel'
-        h:
-          $ref: '#/components/schemas/CommonHeaders'
-        reqId:
-          $ref: '#/components/schemas/reqId'
-      required:
-        - m
-        - c
-        - h
-      additionalProperties: false
-    BalancesSubscriptionRequestAck:
-      title: BalancesSubscriptionRequestAck
-      type: object
-      properties:
-        m:
-          $ref: '#/components/schemas/SubscriptionMethod'
-        c:
-          $ref: '#/components/schemas/BalancesChannel'
-        s:
-          $ref: '#/components/schemas/Status'
-        e:
-          $ref: '#/components/schemas/Error'
-        reqId:
-          $ref: '#/components/schemas/reqId'
-      required:
-        - m
-        - c
-        - s
-      additionalProperties: false
-    Balances:
-      title: Balances
-      type: object
-      properties:
-        c:
-          $ref: '#/components/schemas/BalancesChannel'
-        t:
-          $ref: '#/components/schemas/ResponseType'
-        d:
-          type: array
-          items:
-            $ref: '#/components/schemas/Balance'
-        reqId:
-          $ref: '#/components/schemas/reqId'
-      required:
-        - c
-        - t
-        - d
-      additionalProperties: false
-    Balance:
-      title: Balance
-      type: object
-      properties:
-        a:
-          type: string
-          description: Asset.
-          example: BTC
-        d:
-          type: string
-          description: Asset description.
-          example: Bitcoin
-        t:
-          type: number
-          description: Total amount of the balance.
-          example: 1000
-        av:
-          type: number
-          description: The balance available to the user.
-          example: 10
-        r:
-          type: number
-          description: Liquidity margin rate. For example, if it is set to 0.5, only 50% of market value can be used for collateral purposes.
-          example: 0.5
-          default: 1.0
-        p:
-          type: number
-          description: Market price (if applicable)
-          example: 104.24
-      required:
-        - a
-        - t
-        - av
-      additionalProperties: false
     TransfersChannel:
       type: string
       description: Channel name (will always be `transfers`).
@@ -1513,23 +1367,6 @@ components:
         - c
         - s
       additionalProperties: false
-    CustomFieldsValueItem:
-      title: CustomFieldsValueItem
-      type: object
-      properties:
-        id:
-          description: Column identifier.
-          type: string
-        v:
-          description: Localised column value
-          type: string
-      required:
-        - id
-        - v
-      example:
-        - id: RealisedPL
-          value: 100
-      additionalProperties: false
     PositionsSnapshot:
       title: Positions snapshot
       type: object
@@ -1798,15 +1635,38 @@ components:
           minimum: 1
           example: 1263159154
         pi:
-          description: Unique identifier of the position that has been opened, modified or closed.
+          description: |
+            Unique identifier of the single position involved in this trade.
+            For position reversals, this is the NEW position created by the reversal (the closed position's ID is in rpi).
           type: integer
           format: int64
           minimum: 1
           example: 10098
+        rpi:
+          description: |
+            Unique identifier of the position closed by a reversal.
+            Only present when a position is reversed (i.e., when the trade closes an existing position
+            and opens a new one in the opposite direction).
+          type: integer
+          format: int64
+          minimum: 1
+          example: 10097
         pp:
-          description: Position price.
+          description: |
+            Average open price of the position this trade acted on, and the price the trade's profit
+            (pl) was measured from.
+            On a reversal it is the average open price of the position the trade closed (rpi); on a fill
+            that increases a position, the average open price the fill produced.
           type: number
           example: 1.23564
+        cq:
+          description: |
+            Volume (in lots) this trade closed against the position it acted on, and the volume its
+            profit (pl) was realized on.
+            It is the trade's own volume (q) on a full or partial close, the closed position's volume on
+            a reversal, and 0 when the trade opened or increased a position.
+          type: number
+          example: 0.1
         pl:
           description: Profit/loss.
           type: number
@@ -1841,6 +1701,7 @@ components:
         - oi
         - pi
         - pp
+        - cq
         - pl
         - sw
         - c
@@ -2024,29 +1885,6 @@ components:
         - M
       additionalProperties: false
 
-    OrderInformationalMessage:
-      title: OrderInformationalMessage
-      description: >
-        Informational message description, that may be displayed for the order
-        in the client terminal.
-      type: object
-      properties:
-        m:
-          description: Message text
-          type: string
-          example: This order has been rejected due to the closed market
-        s:
-          description: Message severity
-          type: string
-          enum:
-            - info
-            - warn
-            - err
-          example: info
-      required:
-        - t
-        - s
-      additionalProperties: false
     Heartbeat:
       title: Heartbeat
       description: >

@@ -10,13 +10,11 @@ import {
     IBrokerTerminal,
     IChartingLibraryWidget,
 } from 'charting_library/charting_library.js';
-import type {
-    BrokerConfigFlags,
-    TradingTerminalWidgetOptions,
-} from 'charting_library/charting_library.js';
+import type { BrokerConfigFlags, TradingTerminalWidgetOptions } from 'charting_library/charting_library.js';
 
 import CONFIG, { POPULAR_SYMBOLS } from './config.js';
 import Datafeed from './datafeed/datafeed.js';
+import type { ExtendedSymbolInfoFieldKey } from './datafeed/datafeed.js';
 import { TradeServerClient } from './trade-server-api/TradeServerClient.js';
 // Removed adapter - using TradeServerClient directly
 import { BrokerApi } from './broker-api/broker-api.js';
@@ -27,6 +25,28 @@ import { BROKER_ORDER_DURATIONS } from './utils/orderDurationConfig.js';
 import { initConnectionIndicator } from './ui/connectionIndicator.js';
 
 const logger = createLogger({ prefix: '[App]' });
+
+// Curated extra fields shown in the Security Info dialog. propertyName is typed
+// against ExtendedSymbolInfoFieldKey so it stays in sync with SecurityInfoFields,
+// populated by buildExtendedSymbolInfo() in datafeed.ts.
+const ADDITIONAL_SYMBOL_INFO_FIELDS: Array<{ title: string; propertyName: ExtendedSymbolInfoFieldKey }> = [
+    { title: 'Lot Size', propertyName: 'lotSize' },
+    { title: 'Tick Value', propertyName: 'tickValue' },
+    { title: 'Tick Size', propertyName: 'tickSize' },
+    { title: 'Min Order Size', propertyName: 'minVolume' },
+    { title: 'Max Order Size', propertyName: 'maxVolume' },
+    { title: 'Order Size Step', propertyName: 'volumeStep' },
+    { title: 'Base Currency', propertyName: 'baseCurrency' },
+    { title: 'Profit Currency', propertyName: 'profitCurrency' },
+    { title: 'Margin Currency', propertyName: 'marginCurrency' },
+    { title: 'Margin %', propertyName: 'marginPercent' },
+    { title: 'Swap Long', propertyName: 'swapLong' },
+    { title: 'Swap Short', propertyName: 'swapShort' },
+    { title: 'Swap Mode', propertyName: 'swapMode' },
+    { title: 'Trade Mode', propertyName: 'tradeMode' },
+    { title: 'Allowed Order Types', propertyName: 'allowedOrderTypes' },
+    { title: 'Allowed Time In Force', propertyName: 'allowedTimeInForce' },
+];
 
 /**
  * Check if we're on the signin page
@@ -300,7 +320,7 @@ class TradingApp {
             supportOrderBrackets: true,
             supportPositionBrackets: true,
             supportPartialClosePosition: true,
-            showNotificationsLog: true
+            showNotificationsLog: true,
         } as BrokerConfigFlags & {
             supportModifyOrderBrackets: boolean;
             supportModifyPositionBrackets: boolean;
@@ -321,6 +341,7 @@ class TradingApp {
             autosize: CONFIG.tradingView.autosize,
             theme: CONFIG.tradingView.theme,
             widgetbar: CONFIG.tradingView.widgetbar,
+            additional_symbol_info_fields: ADDITIONAL_SYMBOL_INFO_FIELDS,
 
             // Additional settings
             timezone: 'Etc/UTC',
@@ -402,7 +423,8 @@ class TradingApp {
 
         // Create elements safely to prevent XSS
         const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column;';
+        wrapper.style.cssText =
+            'display: flex; justify-content: center; align-items: center; height: 100vh; flex-direction: column;';
 
         const heading = document.createElement('h2');
         heading.style.color = '#d32f2f';

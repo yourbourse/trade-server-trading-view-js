@@ -64,11 +64,7 @@ export class OrderService {
     findPositionBracketOrder(positionId: string, type: OrderType): Order | undefined {
         return this.cachedOrders.find((order) => {
             const bracket = order as Order & { parentId?: string; parentType?: number };
-            return (
-                bracket.parentId === positionId &&
-                bracket.parentType === ParentType.Position &&
-                order.type === type
-            );
+            return bracket.parentId === positionId && bracket.parentType === ParentType.Position && order.type === type;
         });
     }
 
@@ -101,11 +97,7 @@ export class OrderService {
 
         const isBracketFor = (order: Order, type: OrderType): boolean => {
             const bracket = order as Order & { parentId?: string; parentType?: number };
-            return (
-                bracket.parentId === parentId &&
-                bracket.parentType === ParentType.Position &&
-                order.type === type
-            );
+            return bracket.parentId === parentId && bracket.parentType === ParentType.Position && order.type === type;
         };
 
         const isStopBracketFor = (order: Order): boolean => {

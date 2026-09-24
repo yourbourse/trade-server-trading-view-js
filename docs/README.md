@@ -60,7 +60,7 @@ All GIF demonstrations with detailed explanations are available in the [Visual D
 
 | Reference | Description |
 |-----------|-------------|
-| [API Overview](API_OVERVIEW.md) | High-level summary — 31 REST endpoints, 10 WebSocket channels |
+| [API Overview](API_OVERVIEW.md) | High-level summary — 27 REST endpoints, 9 WebSocket channels |
 | [REST API](REST_API.md) | Complete HTTP REST API with request/response schemas |
 | [WebSocket API](WEBSOCKET_API.md) | Real-time channels, message formats, subscription lifecycle |
 | [Account Methods Examples](ACCOUNT_METHODS_EXAMPLES.md) | Practical code examples for account and trading operations |

@@ -88,10 +88,7 @@ export const BROKER_ORDER_DURATIONS: OrderDurationMetaInfo[] = [
 export const DURATION_FALLBACK_ORDER: readonly string[] = BROKER_ORDER_DURATIONS.map((d) => d.value);
 
 const SUPPORTED_ORDER_TYPES_BY_DURATION: ReadonlyMap<string, readonly OrderType[]> = new Map(
-    BROKER_ORDER_DURATIONS.map((d) => [
-        d.value,
-        d.supportedOrderTypes ?? [...RESTING_ORDER_TYPES],
-    ])
+    BROKER_ORDER_DURATIONS.map((d) => [d.value, d.supportedOrderTypes ?? [...RESTING_ORDER_TYPES]])
 );
 
 export function isDurationCompatibleWithOrderType(duration: string, orderType: OrderType): boolean {

@@ -112,22 +112,6 @@ const state = await api.getAccountInfo();
 // }
 ```
 
-### getBalance()
-
-Get account balance(s) and collateral.
-
-**Endpoint:** `GET /account/balances`
-
-```javascript
-const balances = await api.getBalance();
-// Returns: {
-//   balances: [
-//     { c: 'USD', b: 10000, ab: 9500, av: 9000 },
-//     { c: 'EUR', b: 5000, ab: 4800, av: 4500 }
-//   ]
-// }
-```
-
 ### getPositions(filter, nextToken)
 
 Get open positions with optional filtering and pagination.
@@ -202,31 +186,6 @@ const transfers = await api.getTransfersHistory({
 //     }
 //   ],
 //   nextToken: '...'
-// }
-```
-
-### getAccountSummary()
-
-Get comprehensive account summary (convenience method that combines account state and balances).
-
-**Combines:** `getAccountInfo()` + `getBalance()`
-
-```javascript
-const summary = await api.getAccountSummary();
-// Returns: {
-//   state: {
-//     b: 41757.91,   // Balance
-//     C: 1000,       // Credit
-//     pl: 1053.02,   // Unrealized P/L
-//     e: 43857.56,   // Equity
-//     m: 102.19,     // Used margin
-//     c: 'USD'       // Currency
-//   },
-//   balances: {
-//     balances: [
-//       { c: 'USD', b: 10000, ab: 9500, av: 9000 }
-//     ]
-//   }
 // }
 ```
 
@@ -518,7 +477,7 @@ const symbol = await api.getSymbolInfo('EURUSD', 'en');
 //   d: 'Euro vs US Dollar',
 //   dp: 5,
 //   l: 100000,
-//   tm: 'FullTrading',
+//   tm: 'Full',
 //   min: 0.01,
 //   max: 10,
 //   // ... more configuration

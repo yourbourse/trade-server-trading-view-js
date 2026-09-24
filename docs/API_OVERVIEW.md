@@ -3,7 +3,7 @@
 # API Overview
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![REST API](https://img.shields.io/badge/REST-31%20endpoints-blue)](REST_API.md)
+[![REST API](https://img.shields.io/badge/REST-27%20endpoints-blue)](REST_API.md)
 [![WebSocket](https://img.shields.io/badge/WebSocket-10%20channels-green)](WEBSOCKET_API.md)
 
 **Complete reference to the YourBourse Trade Server API integration**
@@ -32,7 +32,7 @@ This application provides complete TypeScript integration with the **YourBourse 
 
 ---
 
-## REST API (31 Endpoints)
+## REST API (27 Endpoints)
 
 HTTP endpoints for account management, order placement, and market data retrieval.
 
@@ -65,9 +65,9 @@ Real-time data streaming for market data, account updates, and trade executions.
 |---------|-------------|:--------:|:---------:|
 | **orders** | Order updates (create, modify, fill, cancel) | ✅ | ✅ |
 | **positions** | Position changes and P&L updates | ✅ | ✅ |
-| **balances** | Balance and collateral updates | ✅ | ✅ |
 | **states** | Account state (equity, margin) | ✅ | ✅ |
 | **trades** | Trade execution notifications | ❌ | ✅ |
+| **transfers** | Transfer history | ✅ | ✅ |
 
 #### Market Data Channels (3)
 

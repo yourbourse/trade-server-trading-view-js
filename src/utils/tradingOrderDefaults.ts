@@ -57,10 +57,7 @@ export function pickDefaultDuration(
     allowedDurations: string[] | undefined,
     orderType: OrderType
 ): string | null {
-    const pool =
-        allowedDurations && allowedDurations.length > 0
-            ? allowedDurations
-            : [...DURATION_FALLBACK_ORDER];
+    const pool = allowedDurations && allowedDurations.length > 0 ? allowedDurations : [...DURATION_FALLBACK_ORDER];
 
     const compatible = pool.filter((d) => isDurationCompatibleWithOrderType(d, orderType));
 
@@ -90,10 +87,7 @@ function applyOrderTypeViaTvSettings(symbol: string): void {
     tvSettings.setJSON(BROKER_TRADING_SETTINGS_KEY, settings);
 }
 
-function applyDurationsViaTvSettings(
-    symbol: string,
-    durationsByOrderType: Partial<Record<number, string>>
-): void {
+function applyDurationsViaTvSettings(symbol: string, durationsByOrderType: Partial<Record<number, string>>): void {
     const tvSettings = getTvSettings();
     if (!tvSettings) {
         return;
