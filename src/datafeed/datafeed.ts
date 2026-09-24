@@ -202,6 +202,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
             .getSymbolInfo(symbolName)
             .then((symbolInfo: Symbol) => {
                 if (!symbolInfo.t || symbolInfo.t.length === 0) {
+                    logger.warn('resolveSymbol: symbol has no trading sessions:', symbolName);
                     onResolveErrorCallback('Symbol has no trading sessions');
                     return;
                 }
