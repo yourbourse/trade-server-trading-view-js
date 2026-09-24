@@ -27,8 +27,8 @@ import { initConnectionIndicator } from './ui/connectionIndicator.js';
 const logger = createLogger({ prefix: '[App]' });
 
 // Curated extra fields shown in the Security Info dialog. propertyName is typed
-// against ExtendedSymbolInfoFieldKey so it stays in sync with the flat keys
-// populated on ExtendedSymbolInfo in datafeed.ts's resolveSymbol().
+// against ExtendedSymbolInfoFieldKey so it stays in sync with SecurityInfoFields,
+// populated by buildExtendedSymbolInfo() in datafeed.ts.
 const ADDITIONAL_SYMBOL_INFO_FIELDS: Array<{ title: string; propertyName: ExtendedSymbolInfoFieldKey }> = [
     { title: 'Lot Size', propertyName: 'lotSize' },
     { title: 'Tick Value', propertyName: 'tickValue' },

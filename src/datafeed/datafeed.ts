@@ -40,10 +40,11 @@ import {
 const logger = createLogger({ prefix: '[Datafeed]' });
 
 /**
- * LibrarySymbolInfo plus the curated extra fields surfaced in the Security Info
- * dialog via `additional_symbol_info_fields` (see widgetOptions in app.ts).
+ * Curated extra fields surfaced in the Security Info dialog via
+ * `additional_symbol_info_fields` (see widgetOptions in app.ts). All values are
+ * pre-formatted display strings.
  */
-export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
+export interface SecurityInfoFields {
     lotSize: string;
     tickValue: string;
     tickSize: string;
@@ -62,12 +63,13 @@ export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
     allowedTimeInForce: string;
 }
 
+export type ExtendedSymbolInfo = LibrarySymbolInfo & SecurityInfoFields;
+
 /**
- * Keys of the curated extra fields on `ExtendedSymbolInfo`. Used in app.ts to
- * type-check `additional_symbol_info_fields`'s `propertyName` entries against
- * this interface so the two stay in sync.
+ * Keys of `SecurityInfoFields`. Used in app.ts to type-check
+ * `additional_symbol_info_fields`'s `propertyName` entries so the two stay in sync.
  */
-export type ExtendedSymbolInfoFieldKey = keyof Omit<ExtendedSymbolInfo, keyof LibrarySymbolInfo>;
+export type ExtendedSymbolInfoFieldKey = keyof SecurityInfoFields;
 
 function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
     // dp is the number of decimal places, pricescale = 10^dp. dp = 0 is a valid
