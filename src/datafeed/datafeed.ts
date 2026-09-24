@@ -70,9 +70,9 @@ export interface ExtendedSymbolInfo extends LibrarySymbolInfo {
 export type ExtendedSymbolInfoFieldKey = keyof Omit<ExtendedSymbolInfo, keyof LibrarySymbolInfo>;
 
 function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
-    // Calculate pricescale from decimal precision (dp)
-    // dp is the number of decimal places, pricescale = 10^dp
-    const pricescale = Math.pow(10, symbolInfo.dp || 5);
+    // dp is the number of decimal places, pricescale = 10^dp. dp = 0 is a valid
+    // value (whole-unit quotes), so only fall back when it is actually absent.
+    const pricescale = Math.pow(10, symbolInfo.dp ?? 5);
 
     return {
         name: symbolInfo.n,
