@@ -132,11 +132,11 @@ See the [Authentication Guide](AUTHENTICATION.md) for details.
 
 ### How does real-time data work?
 
-A single WebSocket connection multiplexes 10 channels:
+A single WebSocket connection multiplexes 9 channels:
 
 | Channel Type | Channels | Purpose |
 |-------------|----------|---------|
-| Account | orders, positions, balances, states, trades | Trading data |
+| Account | orders, positions, states, trades | Trading data |
 | Market | ohlc, L1, L2 | Price data |
 | System | heartbeat | Keep-alive |
 

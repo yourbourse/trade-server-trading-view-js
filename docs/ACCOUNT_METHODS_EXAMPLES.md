@@ -23,36 +23,6 @@ console.log('Credit:', state.C);
 console.log('Currency:', state.c);
 ```
 
-### Get Account Balances
-
-```javascript
-// Get all balances/collateral
-const balances = await api.getBalance();
-balances.balances.forEach(balance => {
-    console.log(`${balance.c}: Total=${balance.t}, Available=${balance.av}`);
-});
-```
-
-### Get Comprehensive Account Summary
-
-```javascript
-// Get both state and balances in a single call
-const summary = await api.getAccountSummary();
-
-// Access account state
-console.log('Account State:');
-console.log('  Balance:', summary.state.b);
-console.log('  Equity:', summary.state.e);
-console.log('  P/L:', summary.state.pl);
-console.log('  Margin:', summary.state.m);
-
-// Access balances
-console.log('\nBalances:');
-summary.balances.balances.forEach(balance => {
-    console.log(`  ${balance.c}: ${balance.av} available`);
-});
-```
-
 ## Position Management
 
 ### Get All Open Positions
@@ -234,8 +204,7 @@ console.log(`Total trades in last 7 days: ${allTrades.length}`);
 
 ```javascript
 async function checkAccountHealth() {
-    const summary = await api.getAccountSummary();
-    const state = summary.state;
+    const state = await api.getAccountInfo();
     
     // Calculate margin level (equity / margin * 100)
     const marginLevel = state.m > 0 ? (state.e / state.m) * 100 : Infinity;
@@ -310,14 +279,14 @@ async function getDailyReport() {
         sortOrder: 'desc'
     });
     
-    // Get account summary
-    const summary = await api.getAccountSummary();
+    // Get account state
+    const state = await api.getAccountInfo();
     
     console.log('=== Daily Report ===');
     console.log('Date:', today.toDateString());
-    console.log('\nAccount Balance:', summary.state.b, summary.state.c);
-    console.log('Current Equity:', summary.state.e, summary.state.c);
-    console.log('Unrealized P/L:', summary.state.pl, summary.state.c);
+    console.log('\nAccount Balance:', state.b, state.c);
+    console.log('Current Equity:', state.e, state.c);
+    console.log('Unrealized P/L:', state.pl, state.c);
     
     console.log('\nToday\'s Transfers:', transfers.transfers.length);
     let depositTotal = 0;
@@ -331,8 +300,8 @@ async function getDailyReport() {
         }
     });
     
-    console.log('  Deposits:', depositTotal, summary.state.c);
-    console.log('  Withdrawals:', withdrawalTotal, summary.state.c);
+    console.log('  Deposits:', depositTotal, state.c);
+    console.log('  Withdrawals:', withdrawalTotal, state.c);
 }
 
 await getDailyReport();
@@ -342,15 +311,15 @@ await getDailyReport();
 
 ```javascript
 try {
-    const summary = await api.getAccountSummary();
-    console.log('Account summary retrieved successfully');
+    const state = await api.getAccountInfo();
+    console.log('Account info retrieved successfully');
 } catch (error) {
     if (error.status === 403) {
         console.error('Authentication failed or IP banned');
     } else if (error.status === 429) {
         console.error('Rate limit exceeded');
     } else {
-        console.error('Error fetching account summary:', error.message);
+        console.error('Error fetching account info:', error.message);
     }
 }
 ```

@@ -2,17 +2,66 @@
   "openapi": "3.0.4",
   "info": {
     "title": "Your Bourse Trading Platform REST API",
-    "description": "This document serves as high-level specifications for [Your Bourse](https://yourbourse.com)'s trading platform REST APIs.\n\nAll requests should contain the `X-YB-API-Key` header with the public API token.\n\nAll field names and values are **case-sensitive**, unless noted otherwise.\n\n# HMAC authentication\n\nAll `POST`, `PUT` and `DELETE` requests must contain HMAC signature. For [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) a pair of private and public API tokens is used.\n\nThere are two methods to generate HMAC signature: 1) with nonce, or 2) with timestamp.\n\n**1) Nonce + HMAC signature:**\n\n1. Add `X-YB-Nonce` header with nonce value. Please note that its value should be higher than any nonce sent in the previous requests.\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n   *Example with non-empty body:*\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Nonce=1464264688310\n   ```\n\n   *Example with empty body (e.g., `DELETE` requests):*\n   ```\n   Content=\n   Nonce=1464264688310\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**2) Timestamp + HMAC signature:**\n\n1. Add `X-YB-Timestamp` header with timestamp value (microseconds since Unix epoch).\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n   *Example with non-empty body:*\n   ```\n   Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n   Timestamp=1738066591010786\n   ```\n\n   *Example with empty body (e.g., `DELETE` requests):*\n   ```\n   Content=\n   Timestamp=1738066591010786\n   ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**Example: signing a `DELETE /order/{orderId}` request**\n\nBelow is a complete `curl` example for cancelling an order. Because the request body is empty, the value of `Content` in the string to sign is an empty string, but the `Content=` line and the `\\n` separator before `Nonce=` (or `Timestamp=`) must still be present. The HMAC hash is base64url-encoded (RFC 4648 §5) without `=` padding.\n\n```bash\nAPI_KEY=\"vJJErCZDZBD07z1p4Ed91t0qob6bAL\"\nSECRET=\"frieUMo6AdidOMp7XQVSfGRTRyF5hktoRX5Pk0ijujatIHBbNvXQSO4kUyirSHF\"\nORDER_ID=12345\nNONCE=1464264688310\n\n# String to sign — literally `Content=\\nNonce=<nonce>` with no trailing newline.\nSTRING_TO_SIGN=$(printf 'Content=\\nNonce=%s' \"$NONCE\")\n\n# HMAC-SHA256, then base64url without `=` padding.\nSIGN=$(printf '%s' \"$STRING_TO_SIGN\" \\\n  | openssl dgst -sha256 -hmac \"$SECRET\" -binary \\\n  | openssl base64 -A | tr '+/' '-_' | tr -d '=')\n\ncurl -X DELETE \"https://<host>:<port>/api/v1/order/$ORDER_ID\" \\\n  -H \"X-YB-API-Key: $API_KEY\" \\\n  -H \"X-YB-Nonce: $NONCE\" \\\n  -H \"X-YB-Sign: $SIGN\"\n```\n\nTo sign with a timestamp instead, use a microsecond timestamp in place of the nonce, write `Timestamp=` instead of `Nonce=` in the string to sign, and send it in the `X-YB-Timestamp` header instead of `X-YB-Nonce`.\n\n# Conditional GETs\n\nIf a GET request to a resource does not have the `If-None-Match` header, server always returns resource version in the `ETag` header.\n\nIf a GET request to a resource has the `If-None-Match` header with the last known resource version but the resource has been updated since, server responds with a new resource representation and includes the new `ETag` header in the response.\n\nIf the value of `If-None-Match` header of a GET request matches the current resource version on the server, the server responds with the `304 Not Modified` status code and empty body. The server includes the `ETag` header to the response.\n\n# Conditional POSTs, PUTs and DELETEs\n\nAll `POST`, `PUT` and `DELETE` requests must contain the `If-Match` header with the last known resource version.\n\nIf the value of `If-Match` header of the request matches the current resource version on the server, the server proceeds with the request. Otherwise, the server responds with the `412 Precondition Failed` status. Client is expected to retrieve the latest resource version and retry the request.\n\nIf the `If-Match` header is not present in the request, status code of `412 Precondition Failed` is returned along with the error details.\n\n# HTTP Return Codes\n| Status code | Error |\n| ----- | ----- |\n| `304 Not Modified` | The requested resource has not been modified since the last time it was accessed. |\n| `400 Bad Request` | Invalid request (e.g., malformed request syntax). |\n| `401 Unauthorized` | 'X-YB-API-Key' header is missing or invalid. |\n| `403 Forbidden` | IP has been auto-banned for continuing to send requests after receiving `429 Too Many Requests` codes. |\n| `404 Not Found` | Either the resource does not exist or client is not permitted to access it. |\n| `412 Precondition Failed` | Conditional request failed. |\n| `413 Request Entity Too Large` | Request size is greater than a pre-defined threshold (security measure to avoid DDoS attacks). |\n| `415 Unsupported Media Type` | Body is not in the `application/json` format. |\n| `429 Too Many Requests` | The client has sent too many requests in a given amount of time and broke a request rate limit. |\n| `500 Internal Server Error` | An unexpected error occurred on server; the issue is on Your Bourse's side. It is important to **NOT** treat this as a failure operation; the execution status is **UNKNOWN** and could have been a success. |\n\n# Rate limits\n\nThe rate limits are based on the IP addresses, not the API keys.\n\nEach route has a `weight` which determines for the number of requests each endpoint counts for. Heavier endpoints and endpoints that do operations on multiple symbols will have a heavier `weight`.\n\nWhen a `429 Too Many Requests` is received, it's your obligation as an API to back off and not spam the API. Repeatedly violating rate limits and/or failing to back off after receiving 429s will result in an automated IP ban (HTTP status `403 Forbidden`). IP bans are tracked and scale in duration for repeat offenders.\n\nA `Retry-After` header is sent with a `403 Forbidden` or `429 Too Many Requests` responses and will give the number of seconds required to wait, in the case of a 429, to prevent a ban, or, in the case of a 403, until the ban is over.\n\nEvery response might contain `X-YB-USED-WEIGHT-(intervalNum)(intervalLetter)` headers with the used weight for the IP address for all request rate limiters defined.\n\n`intervalLetter` could be `S` (second), `M` (minute), `H` (hour) or `D` (day). `intervalNum` describes the amount of the interval. For example, `intervalNum` 10 with `intervalLetter` S means \"Every 10 seconds\".\n\n# Unfilled order count limits\n\nEvery successful order response might contain a `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` header indicating how many orders you have placed for that interval. Rejected/unsuccessful orders are not guaranteed to have `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` headers in the response.\n\nThe rate limit applies to the number of new, unfilled orders placed within a time interval. That is, orders which are partially or fully filled do not count against the rate limit.\n\nUnfilled order count is tracked by trading account and is shared across all IP addresses, all API keys, and all APIs.\n\nIf you have exceeded this, you will receive a `429 Too Many Requests` error without the `Retry-After` header.\n\n# HTTP keep-alive\n\nIt is strongly recommended to enable `Keep-Alive` and reuse HTTP connections to send and receive multiple HTTP requests/responses, as opposed to opening a new connection for every single request/response pair.",
-    "version": "0.0.1251"
+    "description": "This document serves as high-level specifications for [Your Bourse](https://yourbourse.com)'s trading platform REST APIs.\n\nAll requests should contain the `X-YB-API-Key` header with the public API token.\n\nAll field names and values are **case-sensitive**, unless noted otherwise.\n\n# HMAC authentication\n\nAll `POST`, `PUT` and `DELETE` requests must contain HMAC signature. For [HMAC authentication](https://en.wikipedia.org/wiki/HMAC) a pair of private and public API tokens is used.\n\nThere are two methods to generate HMAC signature: 1) with nonce, or 2) with timestamp.\n\n**1) Nonce + HMAC signature:**\n\n1. Add `X-YB-Nonce` header with nonce value. Please note that its value should be higher than any nonce sent in the previous requests.\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n  *Example with non-empty body:*\n  ```\n  Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n  Nonce=1464264688310\n  ```\n\n  *Example with empty body (e.g., `DELETE` requests):*\n  ```\n  Content=\n  Nonce=1464264688310\n  ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**2) Timestamp + HMAC signature:**\n\n1. Add `X-YB-Timestamp` header with timestamp value (microseconds since Unix epoch).\n\n2. Build the string to sign by concatenating the following lines exactly in the order shown, separated by a single new line character (`\\n`). The string has no trailing newline. If the request has no body (e.g., `DELETE` requests), the value after `Content=` is an empty string but the `Content=` line and the `\\n` separator are still required.\n\n  *Example with non-empty body:*\n  ```\n  Content={ \"symbol\": \"EURUSD\", \"quantity\": 1.23 }\n  Timestamp=1738066591010786\n  ```\n\n  *Example with empty body (e.g., `DELETE` requests):*\n  ```\n  Content=\n  Timestamp=1738066591010786\n  ```\n\n3. Calculate the HMAC hash by applying SHA2-256 algorithm.\n\n4. Add the `X-YB-Sign` header to store HMAC hash.\n\n**Example: signing a `DELETE /order/{orderId}` request**\n\nBelow is a complete `curl` example for cancelling an order. Because the request body is empty, the value of `Content` in the string to sign is an empty string, but the `Content=` line and the `\\n` separator before `Nonce=` (or `Timestamp=`) must still be present. The HMAC hash is base64url-encoded (RFC 4648 §5) without `=` padding.\n\n```bash\nAPI_KEY=\"vJJErCZDZBD07z1p4Ed91t0qob6bAL\"\nSECRET=\"frieUMo6AdidOMp7XQVSfGRTRyF5hktoRX5Pk0ijujatIHBbNvXQSO4kUyirSHF\"\nORDER_ID=12345\nNONCE=1464264688310\n\n# String to sign — literally `Content=\\nNonce=<nonce>` with no trailing newline.\nSTRING_TO_SIGN=$(printf 'Content=\\nNonce=%s' \"$NONCE\")\n\n# HMAC-SHA256, then base64url without `=` padding.\nSIGN=$(printf '%s' \"$STRING_TO_SIGN\" \\\n  | openssl dgst -sha256 -hmac \"$SECRET\" -binary \\\n  | openssl base64 -A | tr '+/' '-_' | tr -d '=')\n\ncurl -X DELETE \"https://<host>:<port>/api/v1/order/$ORDER_ID\" \\\n  -H \"X-YB-API-Key: $API_KEY\" \\\n  -H \"X-YB-Nonce: $NONCE\" \\\n  -H \"X-YB-Sign: $SIGN\"\n```\n\nTo sign with a timestamp instead, use a microsecond timestamp in place of the nonce, write `Timestamp=` instead of `Nonce=` in the string to sign, and send it in the `X-YB-Timestamp` header instead of `X-YB-Nonce`.\n\n# Conditional GETs\n\nIf a GET request to a resource does not have the `If-None-Match` header, server always returns resource version in the `ETag` header.\n\nIf a GET request to a resource has the `If-None-Match` header with the last known resource version but the resource has been updated since, server responds with a new resource representation and includes the new `ETag` header in the response.\n\nIf the value of `If-None-Match` header of a GET request matches the current resource version on the server, the server responds with the `304 Not Modified` status code and empty body. The server includes the `ETag` header to the response.\n\n# Conditional POSTs, PUTs and DELETEs\n\nAll `POST`, `PUT` and `DELETE` requests must contain the `If-Match` header with the last known resource version.\n\nIf the value of `If-Match` header of the request matches the current resource version on the server, the server proceeds with the request. Otherwise, the server responds with the `412 Precondition Failed` status. Client is expected to retrieve the latest resource version and retry the request.\n\nIf the `If-Match` header is not present in the request, status code of `412 Precondition Failed` is returned along with the error details.\n\n# HTTP Return Codes\n| Status code | Error |\n| ----- | ----- |\n| `304 Not Modified` | The requested resource has not been modified since the last time it was accessed. |\n| `400 Bad Request` | Invalid request (e.g., malformed request syntax). |\n| `401 Unauthorized` | 'X-YB-API-Key' header is missing or invalid. |\n| `403 Forbidden` | IP has been auto-banned for continuing to send requests after receiving `429 Too Many Requests` codes. |\n| `404 Not Found` | Either the resource does not exist or client is not permitted to access it. |\n| `412 Precondition Failed` | Conditional request failed. |\n| `413 Request Entity Too Large` | Request size is greater than a pre-defined threshold (security measure to avoid DDoS attacks). |\n| `415 Unsupported Media Type` | Body is not in the `application/json` format. |\n| `429 Too Many Requests` | The client has sent too many requests in a given amount of time and broke a request rate limit. |\n| `500 Internal Server Error` | An unexpected error occurred on server; the issue is on Your Bourse's side. It is important to **NOT** treat this as a failure operation; the execution status is **UNKNOWN** and could have been a success. |\n\n# Rate limits\n\nThe rate limits are based on the IP addresses, not the API keys.\n\nEach route has a `weight` which determines for the number of requests each endpoint counts for. Heavier endpoints and endpoints that do operations on multiple symbols will have a heavier `weight`.\n\nWhen a `429 Too Many Requests` is received, it's your obligation as an API to back off and not spam the API. Repeatedly violating rate limits and/or failing to back off after receiving 429s will result in an automated IP ban (HTTP status `403 Forbidden`). IP bans are tracked and scale in duration for repeat offenders.\n\nA `Retry-After` header is sent with a `403 Forbidden` or `429 Too Many Requests` responses and will give the number of seconds required to wait, in the case of a 429, to prevent a ban, or, in the case of a 403, until the ban is over.\n\nEvery response might contain `X-YB-USED-WEIGHT-(intervalNum)(intervalLetter)` headers with the used weight for the IP address for all request rate limiters defined.\n\n`intervalLetter` could be `S` (second), `M` (minute), `H` (hour) or `D` (day). `intervalNum` describes the amount of the interval. For example, `intervalNum` 10 with `intervalLetter` S means \"Every 10 seconds\".\n\n# Unfilled order count limits\n\nEvery successful order response might contain a `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` header indicating how many orders you have placed for that interval. Rejected/unsuccessful orders are not guaranteed to have `X-YB-ORDER-COUNT-(intervalNum)(intervalLetter)` headers in the response.\n\nThe rate limit applies to the number of new, unfilled orders placed within a time interval. That is, orders which are partially or fully filled do not count against the rate limit.\n\nUnfilled order count is tracked by trading account and is shared across all IP addresses, all API keys, and all APIs.\n\nIf you have exceeded this, you will receive a `429 Too Many Requests` error without the `Retry-After` header.\n\n# HTTP keep-alive\n\nIt is strongly recommended to enable `Keep-Alive` and reuse HTTP connections to send and receive multiple HTTP requests/responses, as opposed to opening a new connection for every single request/response pair.",
+    "version": "26.9.50"
   },
   "servers": [
     {
-      "url": "https://<IP_address>:<port>/api/v1"
+      "url": "https://{host}:{port}/api/v1",
+      "variables": {
+        "host": {
+          "default": "localhost",
+          "description": "Trade server IP address or hostname."
+        },
+        "port": {
+          "default": "4443",
+          "description": "Trade server port."
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "Authorization",
+      "description": "User authentication and token management"
+    },
+    {
+      "name": "Account",
+      "description": "Account state and limits"
+    },
+    {
+      "name": "Symbols",
+      "description": "Symbol information and market data"
+    },
+    {
+      "name": "Trading",
+      "description": "Order management and trading operations"
+    },
+    {
+      "name": "Market Data",
+      "description": "Real-time market data and charts"
+    },
+    {
+      "name": "Charts",
+      "description": "Historical chart data"
+    },
+    {
+      "name": "Conversion",
+      "description": "Currency and value conversion"
+    },
+    {
+      "name": "Broker Configuration",
+      "description": "Broker configuration management"
+    },
+    {
+      "name": "Misc",
+      "description": "Miscellaneous operations"
     }
   ],
   "paths": {
     "/authorize": {
       "post": {
+        "operationId": "authorize",
         "tags": [
           "Authorization"
         ],
@@ -30,6 +79,18 @@
           },
           {
             "$ref": "#/components/parameters/Locale"
+          },
+          {
+            "$ref": "#/components/parameters/ForwardedFor"
+          },
+          {
+            "$ref": "#/components/parameters/TraceCode"
+          },
+          {
+            "$ref": "#/components/parameters/AppVersion"
+          },
+          {
+            "$ref": "#/components/parameters/AppName"
           }
         ],
         "requestBody": {
@@ -124,11 +185,12 @@
     },
     "/refresh": {
       "post": {
+        "operationId": "refreshToken",
         "tags": [
           "Authorization"
         ],
         "summary": "Refresh API token",
-        "description": "Refresh API token. \n\n`Weight` 5.\n",
+        "description": "Refresh API token.\n\n`Weight` 5.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/ApiKey"
@@ -141,6 +203,18 @@
           },
           {
             "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/ForwardedFor"
+          },
+          {
+            "$ref": "#/components/parameters/TraceCode"
+          },
+          {
+            "$ref": "#/components/parameters/AppVersion"
+          },
+          {
+            "$ref": "#/components/parameters/AppName"
           },
           {
             "$ref": "#/components/parameters/Locale"
@@ -238,6 +312,18 @@
             "$ref": "#/components/parameters/Signature"
           },
           {
+            "$ref": "#/components/parameters/ForwardedFor"
+          },
+          {
+            "$ref": "#/components/parameters/TraceCode"
+          },
+          {
+            "$ref": "#/components/parameters/AppVersion"
+          },
+          {
+            "$ref": "#/components/parameters/AppName"
+          },
+          {
             "$ref": "#/components/parameters/Locale"
           }
         ],
@@ -303,11 +389,12 @@
     },
     "/password": {
       "post": {
+        "operationId": "changePassword",
         "tags": [
           "Authorization"
         ],
         "summary": "Change password",
-        "description": "Change trading account password. \n\n`Weight` 5.\n",
+        "description": "Change trading account password.\n\n`Weight` 5.\n",
         "parameters": [
           {
             "$ref": "#/components/parameters/ApiKey"
@@ -320,6 +407,18 @@
           },
           {
             "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/ForwardedFor"
+          },
+          {
+            "$ref": "#/components/parameters/TraceCode"
+          },
+          {
+            "$ref": "#/components/parameters/AppVersion"
+          },
+          {
+            "$ref": "#/components/parameters/AppName"
           },
           {
             "$ref": "#/components/parameters/Locale"
@@ -766,74 +865,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountState"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "IP address is banned",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "number"
-                },
-                "description": "Number of seconds.",
-                "required": false
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many requests",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "number"
-                },
-                "description": "Number of seconds.",
-                "required": false
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/account/balances": {
-      "get": {
-        "summary": "Balances/collaterial for an account",
-        "operationId": "getBalances",
-        "tags": [
-          "Account"
-        ],
-        "description": "Get balances/collaterial for an account.\n\n`Weight` 20.\n",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/ApiKey"
-          },
-          {
-            "$ref": "#/components/parameters/Locale"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Balances"
                 }
               }
             }
@@ -2600,8 +2631,106 @@
         }
       }
     },
+    "/api/v1/margin/probe": {
+      "post": {
+        "summary": "Probe margin requirement",
+        "operationId": "probeMargin",
+        "tags": [
+          "Trading"
+        ],
+        "description": "Check margin requirement for a potential order without placing it.\n\n`Weight` 1.\n",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApiKey"
+          },
+          {
+            "$ref": "#/components/parameters/Nonce"
+          },
+          {
+            "$ref": "#/components/parameters/Timestamp"
+          },
+          {
+            "$ref": "#/components/parameters/Signature"
+          },
+          {
+            "$ref": "#/components/parameters/Locale"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderMarginProbeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarginProbeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP address is banned",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "number"
+                },
+                "description": "Number of seconds.",
+                "required": false
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/now": {
       "get": {
+        "operationId": "healthCheck",
         "tags": [
           "Misc"
         ],
@@ -2656,7 +2785,7 @@
         "schema": {
           "type": "string"
         },
-        "example": 100
+        "example": "100"
       },
       "If-Match": {
         "name": "If-Match",
@@ -2666,7 +2795,7 @@
         "schema": {
           "type": "string"
         },
-        "example": 100
+        "example": "100"
       },
       "ApiKey": {
         "name": "X-YB-API-Key",
@@ -2686,7 +2815,7 @@
         "schema": {
           "type": "string"
         },
-        "example": 71665241
+        "example": "71665241"
       },
       "Timestamp": {
         "name": "X-YB-Timestamp",
@@ -2696,7 +2825,7 @@
         "schema": {
           "type": "string"
         },
-        "example": 1738066591010786
+        "example": "1738066591010786"
       },
       "Signature": {
         "name": "X-YB-Sign",
@@ -2707,6 +2836,49 @@
           "type": "string"
         },
         "example": "IdS1L6VgJA2RKI9jF8kUyT6152kL"
+      },
+      "ForwardedFor": {
+        "name": "X-Forwarded-For",
+        "in": "header",
+        "required": false,
+        "description": "Comma-separated list of client/proxy IP addresses added by upstream reverse proxies (leftmost = original client); only the first address is parsed and recorded in the audit log alongside the socket peer address. Each address is IPv4 dotted-decimal (RFC 791) or IPv6 textual notation (RFC 4291 §2.2). This header has no dedicated RFC of its own; it is a long-established de facto convention that RFC 7239 documents as prior art for the standardized `Forwarded` header.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "198.51.100.9, 203.0.113.4"
+      },
+      "TraceCode": {
+        "name": "X-YB-TRACE-CODE",
+        "in": "header",
+        "required": false,
+        "description": "Caller-supplied trace identifier, recorded in the audit log for request correlation.",
+        "schema": {
+          "type": "string",
+          "maxLength": 23
+        },
+        "example": "9c1e1f"
+      },
+      "AppVersion": {
+        "name": "X-YB-APP-VERSION",
+        "in": "header",
+        "required": false,
+        "description": "Caller application version, recorded in the audit log.",
+        "schema": {
+          "type": "string",
+          "maxLength": 15
+        },
+        "example": "1.2.3"
+      },
+      "AppName": {
+        "name": "X-YB-APP-NAME",
+        "in": "header",
+        "required": false,
+        "description": "Caller application name, recorded in the audit log.",
+        "schema": {
+          "type": "string",
+          "maxLength": 23
+        },
+        "example": "mobile-app"
       },
       "NextToken": {
         "name": "X-YB-NEXT-TOKEN",
@@ -2745,64 +2917,15 @@
         },
         "required": true
       },
-      "Symbol": {
-        "name": "symbol",
-        "in": "query",
-        "description": "Symbol name.",
-        "schema": {
-          "type": "string"
-        },
-        "required": false,
-        "example": "EURUSD"
-      },
-      "Interval": {
-        "name": "interval",
-        "in": "path",
-        "description": "Chart interval.",
-        "schema": {
-          "type": "string",
-          "enum": [
-            "1M",
-            "5M",
-            "15M",
-            "30M",
-            "1H",
-            "4H",
-            "D",
-            "W",
-            "M"
-          ]
-        },
-        "required": true,
-        "example": "5M"
-      },
-      "HistoryFrom": {
-        "name": "from",
-        "in": "query",
-        "description": "Timestamp (microseconds since the Unix epoch) of the leftmost required bar, including `from`.\n",
-        "schema": {
-          "type": "number"
-        },
-        "required": false,
-        "example": 1726167500000000
-      },
-      "HistoryTo": {
-        "name": "to",
-        "in": "query",
-        "description": "Timestamp (microseconds since the Unix epoch) of the rightmost required bar, including `to`. It can be in the future. In this case, the rightmost required bar is the latest available bar.\n",
-        "schema": {
-          "type": "number"
-        },
-        "required": false,
-        "example": 1726167620000000
-      },
       "MaxResults": {
         "name": "maxResults",
         "in": "query",
         "schema": {
-          "type": "integer"
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
         },
-        "description": "The maximum number of results returned by the call. Ignored if `nextToken` is present.",
+        "description": "The maximum number of results returned by the call. If more than 1000 results is requested, the server will return 1000 symbols. Ignored if `nextToken` is present.",
         "example": 100
       }
     },
@@ -2810,7 +2933,7 @@
       "ApiErrorCode": {
         "title": "ApiErrorCode",
         "type": "string",
-        "description": "Numeric error code, returned as a string. The following table lists all possible values:\n| Code | Description                          | |------|--------------------------------------| | \"0\"  | Successful operation                 | | \"1\"  | Not found                            | | \"2\"  | Server is not ready                  | | \"3\"  | Invalid parameter                    | | \"4\"  | Invalid target                       | | \"5\"  | Invalid 'NextToken'                  | | \"6\"  | Invalid header                       | | \"7\"  | Invalid version                      | | \"8\"  | Internal error                       | | \"9\"  | Dependencies exist                   | | \"10\" | Already exists                       | | \"11\" | Invalid payload                      | | \"12\" | Not allowed                          | | \"13\" | Operation not permitted              | | \"14\" | Business logic error                 | | \"15\" | Invalid Id                           | | \"16\" | Data changed                         | | \"17\" | Identifier cannot be reused          | | \"100\"| No market depth                      | | \"101\"| Invalid market depth                 |",
+        "description": "Numeric error code, returned as a string. The following table lists all possible values:\n| Code | Description                          | |------|--------------------------------------| | \"0\"  | Successful operation                 | | \"1\"  | Not found                            | | \"2\"  | Server is not ready                  | | \"3\"  | Invalid parameter                    | | \"4\"  | Invalid target                       | | \"5\"  | Invalid 'NextToken'                  | | \"6\"  | Invalid header                       | | \"7\"  | Invalid version                      | | \"8\"  | Internal error                       | | \"9\"  | Dependencies exist                   | | \"10\" | Already exists                       | | \"11\" | Invalid payload                      | | \"12\" | Not allowed                          | | \"13\" | Operation not permitted              | | \"14\" | Business logic error                 | | \"15\" | Invalid Id                           | | \"16\" | Data changed                         | | \"17\" | Identifier cannot be reused          | | \"18\" | Duplicate name                       | | \"19\" | Not configured                       | | \"20\" | Not implemented                      | | \"100\"| No market depth                      | | \"101\"| Invalid market depth                 |",
         "example": "14"
       },
       "ProblemDetails": {
@@ -2835,24 +2958,6 @@
           "title"
         ],
         "additionalProperties": false
-      },
-      "OkStatus": {
-        "title": "OkStatus",
-        "type": "string",
-        "description": "Status will always be `ok`.",
-        "enum": [
-          "ok"
-        ],
-        "example": "ok"
-      },
-      "ErrorStatus": {
-        "title": "ErrorStatus",
-        "type": "string",
-        "description": "Status will always be `error`.",
-        "enum": [
-          "error"
-        ],
-        "example": "error"
       },
       "ApiToken": {
         "title": "ApiToken",
@@ -2921,355 +3026,15 @@
         "type": "number",
         "example": 0.1
       },
+      "ModifyOrderRemainingQuantityLots": {
+        "description": "New remaining quantity in lots. The new total order volume will be equal to the new remaining quantity plus the already filled quantity. Cannot be modified for stop loss or take profit orders attached to a parent order or position.",
+        "type": "number",
+        "example": 0.1
+      },
       "QuantityUnits": {
         "description": "Quantity in units (`lots` * `lot size`).",
         "type": "number",
         "example": 10000
-      },
-      "AccountSummaryRow": {
-        "title": "AccountSummaryRow",
-        "type": "array",
-        "description": "Localised Account Summary Row configuration.",
-        "items": {
-          "$ref": "#/components/schemas/AccountSummaryRowItem"
-        },
-        "example": [
-          {
-            "id": "accountBalance",
-            "title": "Account Balance"
-          },
-          {
-            "id": "Equity",
-            "title": "Realized P/L"
-          },
-          {
-            "id": "Open Profit",
-            "title": "Unrealized P/L"
-          }
-        ]
-      },
-      "AccountSummaryRowItem": {
-        "title": "AccountSummaryRowItem",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "Unique Account Summary Row item identifier."
-          },
-          "title": {
-            "type": "string",
-            "description": "Localised Account Summary Row item title."
-          }
-        },
-        "required": [
-          "id",
-          "title"
-        ],
-        "additionalProperties": false
-      },
-      "AccountManager": {
-        "title": "AccountManager",
-        "type": "array",
-        "description": "Localised Account Manager's tables configuration.\n",
-        "items": {
-          "$ref": "#/components/schemas/AccountManagerTable"
-        },
-        "example": [
-          {
-            "id": "accountSummary",
-            "title": "",
-            "columns": [
-              {
-                "id": "todayPL",
-                "title": "Today's P&L"
-              },
-              {
-                "id": "accountValue",
-                "title": "Account Value"
-              },
-              {
-                "id": "balance",
-                "title": "Balance"
-              },
-              {
-                "id": "totalMargin",
-                "title": "Margin"
-              },
-              {
-                "id": "held",
-                "title": "Held"
-              },
-              {
-                "id": "buyingPower",
-                "title": "Buying Power"
-              }
-            ]
-          }
-        ]
-      },
-      "AccountManagerColumn": {
-        "title": "AccountManagerColumn",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "balance"
-          },
-          "title": {
-            "description": "Localised title of a column.",
-            "type": "string",
-            "example": "Balance"
-          },
-          "tooltip": {
-            "description": "Tooltip that is shown on mouse hover.",
-            "type": "string",
-            "example": "Balance column"
-          },
-          "alignment": {
-            "description": "The cell value alignment. Default value is `left`.",
-            "type": "string",
-            "enum": [
-              "left",
-              "right"
-            ],
-            "example": "right",
-            "default": "left"
-          },
-          "isCapitalize": {
-            "description": "The first character of each word in the sentence will be capitalized. The rest of the symbols appearance does not change.",
-            "type": "boolean",
-            "default": true
-          }
-        },
-        "required": [
-          "id",
-          "title"
-        ],
-        "additionalProperties": false
-      },
-      "AccountManagerTable": {
-        "title": "AccountManagerTable",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "accountSummary"
-          },
-          "title": {
-            "description": "Localised title of a table.",
-            "type": "string",
-            "example": "Account Summary"
-          },
-          "columns": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountManagerColumn"
-            },
-            "minItems": 1
-          }
-        },
-        "required": [
-          "id",
-          "columns"
-        ],
-        "additionalProperties": false
-      },
-      "Duration": {
-        "title": "Duration",
-        "description": "Single order duration option (Time-in-Force).",
-        "type": "object",
-        "properties": {
-          "id": {
-            "description": "Duration identifier.",
-            "type": "string",
-            "example": "gtd"
-          },
-          "title": {
-            "description": "Localised title.",
-            "type": "string",
-            "example": "Good Till Date"
-          },
-          "hasDatePicker": {
-            "description": "Display date control in Order Ticket for this duration type.",
-            "type": "boolean",
-            "default": false,
-            "example": true
-          },
-          "hasTimePicker": {
-            "description": "Display time control in Order Ticket for this duration type.",
-            "type": "boolean",
-            "default": false,
-            "example": true
-          },
-          "default": {
-            "description": "Default duration. Only one duration object in the durations array can have a `true` value for this field. The default duration will be used when the user places orders in the silent mode and it will be the selected one when the user opens the Order dialog for the first time.",
-            "type": "boolean",
-            "default": false,
-            "example": true
-          },
-          "supportedOrderTypes": {
-            "description": "An optional array of order types to which the duration will be applied.",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "market",
-                "stop",
-                "limit",
-                "stoplimit"
-              ]
-            },
-            "minItems": 1,
-            "example": [
-              "stop",
-              "stoplimit"
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "supportedOrderTypes"
-        ],
-        "additionalProperties": false
-      },
-      "Durations": {
-        "title": "Durations",
-        "type": "array",
-        "description": "Localised array of order durations (Time-in-Force).",
-        "items": {
-          "$ref": "#/components/schemas/Duration"
-        },
-        "minItems": 1
-      },
-      "Config": {
-        "title": "Config",
-        "type": "object",
-        "properties": {
-          "accountSummaryRow": {
-            "$ref": "#/components/schemas/AccountSummaryRow"
-          },
-          "accountManager": {
-            "$ref": "#/components/schemas/AccountManager"
-          },
-          "durations": {
-            "$ref": "#/components/schemas/Durations"
-          },
-          "orderCustomFields": {
-            "$ref": "#/components/schemas/OrderCustomFields"
-          },
-          "orderHistoryCustomFields": {
-            "$ref": "#/components/schemas/OrderHistoryCustomFields"
-          },
-          "positionCustomFields": {
-            "$ref": "#/components/schemas/PositionCustomFields"
-          },
-          "netPositionCustomFields": {
-            "$ref": "#/components/schemas/PositionCustomFields"
-          },
-          "individualPositionCustomFields": {
-            "$ref": "#/components/schemas/PositionCustomFields"
-          },
-          "pullingInterval": {
-            "$ref": "#/components/schemas/PullingInterval"
-          }
-        }
-      },
-      "PullingInterval": {
-        "title": "PullingInterval",
-        "type": "object",
-        "description": "Time intervals in milliseconds to pull data from the server.\nPlease note: if the pulling interval is set above the maximum value then the maximum value will be used explicitly.\n",
-        "properties": {
-          "quotes": {
-            "description": "Time interval in milliseconds to request quote and level 2 depth updates.",
-            "type": "number",
-            "default": 500,
-            "maximum": 1000,
-            "example": 500
-          },
-          "orders": {
-            "description": "Time interval in milliseconds to request orders.",
-            "type": "number",
-            "default": 500,
-            "maximum": 1000,
-            "example": 500
-          },
-          "positions": {
-            "description": "Time interval in milliseconds to request positions.",
-            "type": "number",
-            "default": 1000,
-            "maximum": 1500,
-            "example": 1000
-          },
-          "accountManager": {
-            "description": "Time interval in milliseconds to update Account manager tables.",
-            "type": "number",
-            "default": 500,
-            "maximum": 1500,
-            "example": 1000
-          },
-          "balances": {
-            "description": "Time interval in milliseconds to request balances.",
-            "type": "number",
-            "default": 1000,
-            "maximum": 1500,
-            "example": 1000
-          }
-        }
-      },
-      "PositionCustomFields": {
-        "title": "PositionCustomFields",
-        "type": "array",
-        "description": "Position columns to be displayed in the positions table of the Account manager.\n",
-        "items": {
-          "$ref": "#/components/schemas/AccountManagerColumn"
-        },
-        "example": [
-          {
-            "id": "exchangeFee",
-            "title": "Exchange fee",
-            "tooltip": "Exchange fee for the position",
-            "alignment": "right"
-          },
-          {
-            "id": "routeFee",
-            "title": "Route fee",
-            "tooltip": "Route fee for the position",
-            "alignment": "right"
-          }
-        ]
-      },
-      "OrderCustomFields": {
-        "title": "OrderCustomFields",
-        "type": "array",
-        "description": "Order columns to be displayed in the orders table of the Account manager.\n",
-        "items": {
-          "$ref": "#/components/schemas/AccountManagerColumn"
-        },
-        "example": [
-          {
-            "id": "commission",
-            "title": "Commission",
-            "tooltip": "Commission Fees",
-            "alignment": "right"
-          }
-        ]
-      },
-      "OrderHistoryCustomFields": {
-        "title": "OrderHistoryCustomFields",
-        "type": "array",
-        "description": "History columns to be displayed in the history table of the Account manager.\n",
-        "items": {
-          "$ref": "#/components/schemas/AccountManagerColumn"
-        },
-        "example": [
-          {
-            "id": "commission",
-            "title": "Commission",
-            "tooltip": "Commission Fees",
-            "alignment": "right"
-          }
-        ]
       },
       "Session": {
         "required": [
@@ -3431,13 +3196,13 @@
             "example": 100000
           },
           "tv": {
-            "type": "integer",
+            "type": "number",
             "format": "double",
             "description": "Tick value (monetary value of 1 tick price change).",
             "example": 12.5
           },
           "tz": {
-            "type": "integer",
+            "type": "number",
             "format": "double",
             "description": "Tick size (the lowest allowed increment of a price change).",
             "example": 0.01
@@ -3455,7 +3220,7 @@
             "description": "Trade mode."
           },
           "min": {
-            "type": "integer",
+            "type": "number",
             "description": "Minimum order size (in lots, up to 8 decimal places).",
             "format": "double",
             "example": 0.01
@@ -3467,7 +3232,7 @@
             "example": 10
           },
           "i": {
-            "type": "integer",
+            "type": "number",
             "description": "Order size increment (in lots, up to 8 decimal places).",
             "format": "double",
             "example": 0.01
@@ -3860,33 +3625,31 @@
         "example": {
           "orders": [
             {
-              "i": 1,
+              "id": 1,
               "s": "EURUSD",
-              "v": 100,
-              "S": "Buy",
+              "q": 100,
+              "S": "buy",
               "t": "Limit",
               "ap": 0,
               "lp": 1.14344,
               "tif": "GTC",
               "st": "Working",
-              "c": 1738066591010786,
-              "m": 1738066591010786
+              "C": 1738066591010786,
+              "M": 1738066591010786
             },
             {
-              "i": 2,
+              "id": 2,
               "s": "EURUSD",
-              "v": 100,
-              "S": "Sell",
+              "q": 100,
+              "S": "sell",
               "t": "Limit",
               "fq": 50,
               "ap": 0,
               "lp": 1.15094,
-              "pi": "1",
-              "pt": "Order",
               "tif": "GTC",
               "st": "Inactive",
-              "c": 1738066591010786,
-              "m": 1738066591010786
+              "C": 1738066591010786,
+              "M": 1738066591010786
             }
           ],
           "nextToken": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0"
@@ -4000,58 +3763,6 @@
           "C",
           "M",
           "st"
-        ],
-        "additionalProperties": false
-      },
-      "CustomFieldsValueItem": {
-        "title": "CustomFieldsValueItem",
-        "type": "object",
-        "properties": {
-          "id": {
-            "description": "Column identifier.",
-            "type": "string"
-          },
-          "v": {
-            "description": "Localised column value.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "v"
-        ],
-        "example": [
-          {
-            "id": "RealisedPL",
-            "value": 100
-          }
-        ],
-        "additionalProperties": false
-      },
-      "OrderInformationalMessage": {
-        "title": "OrderInformationalMessage",
-        "description": "Informational message description, that may be displayed for the order in the client terminal.\n",
-        "type": "object",
-        "properties": {
-          "m": {
-            "description": "Message text.",
-            "type": "string",
-            "example": "This order has been rejected due to the closed market"
-          },
-          "s": {
-            "description": "Message severity.",
-            "type": "string",
-            "enum": [
-              "info",
-              "warn",
-              "err"
-            ],
-            "example": "info"
-          }
-        },
-        "required": [
-          "t",
-          "s"
         ],
         "additionalProperties": false
       },
@@ -4210,8 +3921,12 @@
             "example": 12398765
           },
           "q": {
-            "$ref": "#/components/schemas/QuantityLots",
-            "description": "New remaining quantity in lots. The new total order volume will be equal to the new remaining quantity plus the already filled quantity. Cannot be modified for stop loss or take profit orders attached to a parent order or position."
+            "$ref": "#/components/schemas/ModifyOrderRemainingQuantityLots"
+          },
+          "tt": {
+            "description": "New expiration time in microseconds since the Unix epoch. Only applicable to GTD (Good-Till-Date) orders; must be a future timestamp.",
+            "type": "integer",
+            "format": "int64"
           },
           "lp": {
             "description": "Limit price for limit or stop limit order.",
@@ -4276,7 +3991,7 @@
           }
         },
         "required": [
-          "oid"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -4505,16 +4220,28 @@
             "example": 1263159154
           },
           "pi": {
-            "description": "Unique identifier of the position that has been opened, modified or closed.",
+            "description": "Unique identifier of the single position involved in this trade.\nFor position reversals, this is the NEW position created by the reversal (the closed position's ID is in rpi).\n",
             "type": "integer",
             "format": "int64",
             "minimum": 1,
             "example": 10098
           },
+          "rpi": {
+            "description": "Unique identifier of the position closed by a reversal.\nOnly present when a position is reversed (i.e., when the trade closes an existing position\nand opens a new one in the opposite direction).\n",
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 10097
+          },
           "pp": {
-            "description": "Position price.",
+            "description": "Average open price of the position this trade acted on, and the price the trade's profit\n(pl) was measured from.\nOn a reversal it is the average open price of the position the trade closed (rpi); on a fill\nthat increases a position, the average open price the fill produced.\n",
             "type": "number",
             "example": 1.23564
+          },
+          "cq": {
+            "description": "Volume (in lots) this trade closed against the position it acted on, and the volume its\nprofit (pl) was realized on.\nIt is the trade's own volume (q) on a full or partial close, the closed position's volume on\na reversal, and 0 when the trade opened or increased a position.\n",
+            "type": "number",
+            "example": 0.1
           },
           "pl": {
             "description": "Profit/loss.",
@@ -4558,6 +4285,7 @@
           "oi",
           "pi",
           "pp",
+          "cq",
           "pl",
           "sw",
           "c",
@@ -4700,84 +4428,32 @@
               "id": 1,
               "s": "EURUSD",
               "q": 100,
-              "S": "Buy",
+              "S": "buy",
               "t": "Limit",
               "ap": 0,
               "lp": 1.14344,
               "tif": "GTC",
               "st": "Filled",
-              "c": 1738066591010786,
-              "m": 1738066591010786
+              "C": 1738066591010786,
+              "M": 1738066591010786
             },
             {
               "id": 2,
               "s": "EURUSD",
               "q": 100,
-              "S": "Sell",
+              "S": "sell",
               "t": "Limit",
-              "F": 50,
+              "fq": 50,
               "ap": 0,
               "lp": 1.15094,
-              "pi": "1",
-              "pt": "Order",
               "tif": "FOK",
               "st": "Cancelled",
-              "c": 1738066591010786,
-              "m": 1738066591010786
+              "C": 1738066591010786,
+              "M": 1738066591010786
             }
           ],
           "nextToken": "eyJjb3Vyc2VJZCI6MTIzLCJpc0VuY29kaW5nIjpmYWxzZX0"
         }
-      },
-      "Balances": {
-        "title": "Balances",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Balance"
-        }
-      },
-      "Balance": {
-        "title": "Balance",
-        "type": "object",
-        "properties": {
-          "a": {
-            "type": "string",
-            "description": "Asset.",
-            "example": "BTC"
-          },
-          "d": {
-            "type": "string",
-            "description": "Asset description.",
-            "example": "Bitcoin"
-          },
-          "t": {
-            "type": "number",
-            "description": "Total amount of the balance.",
-            "example": 1000
-          },
-          "av": {
-            "type": "number",
-            "description": "The balance available to the user.",
-            "example": 10
-          },
-          "r": {
-            "type": "number",
-            "description": "Liquidity margin rate. For example, if it is set to 0.5, only 50% of market value can be used for collateral purposes.",
-            "example": 0.5,
-            "default": 1
-          },
-          "p": {
-            "type": "number",
-            "description": "Market price (if applicable)",
-            "example": 104.24
-          }
-        },
-        "required": [
-          "a",
-          "t",
-          "av"
-        ],
-        "additionalProperties": false
       },
       "SymbolName": {
         "description": "Symbol name.",
@@ -5130,12 +4806,21 @@
             "description": "Server version.",
             "type": "string",
             "example": "25.1.167"
+          },
+          "level": {
+            "type": "string",
+            "description": "Identifies this response as coming from the Client API.",
+            "enum": [
+              "Client"
+            ],
+            "example": "Client"
           }
         },
         "required": [
           "now",
           "timezone",
-          "version"
+          "version",
+          "level"
         ],
         "additionalProperties": false
       },
@@ -5426,6 +5111,106 @@
         "items": {
           "$ref": "#/components/schemas/ConversionRateBatchResult"
         }
+      },
+      "OrderMarginProbeRequest": {
+        "title": "Order margin probe request",
+        "description": "Request to probe margin requirement for a candidate order",
+        "type": "object",
+        "properties": {
+          "s": {
+            "type": "string",
+            "maxLength": 31,
+            "description": "Symbol name",
+            "example": "EURUSD"
+          },
+          "q": {
+            "type": "number",
+            "format": "double",
+            "description": "Order volume",
+            "example": 1.5
+          },
+          "S": {
+            "type": "string",
+            "enum": [
+              "buy",
+              "sell"
+            ],
+            "description": "Order side",
+            "example": "buy"
+          },
+          "t": {
+            "type": "string",
+            "enum": [
+              "Market",
+              "Limit",
+              "Stop"
+            ],
+            "description": "Order type",
+            "example": "Market"
+          },
+          "lp": {
+            "type": "number",
+            "format": "double",
+            "description": "Limit price (optional, for Limit orders)",
+            "example": 1.2345
+          },
+          "sp": {
+            "type": "number",
+            "format": "double",
+            "description": "Stop price (optional, for Stop orders)",
+            "example": 1.3456
+          },
+          "pi": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Position ID (optional, for specific position netting)",
+            "example": 555666
+          }
+        },
+        "required": [
+          "s",
+          "q",
+          "S",
+          "t"
+        ],
+        "additionalProperties": false
+      },
+      "MarginProbeResult": {
+        "title": "Margin probe result",
+        "description": "Margin requirement result for a candidate order",
+        "type": "object",
+        "properties": {
+          "e": {
+            "type": "number",
+            "format": "double",
+            "description": "Current equity",
+            "example": 5000.5
+          },
+          "rm": {
+            "type": "number",
+            "format": "double",
+            "description": "Required margin without order",
+            "example": 1000.25
+          },
+          "rmw": {
+            "type": "number",
+            "format": "double",
+            "description": "Required margin with order (null if not margin-checked)",
+            "nullable": true,
+            "example": 1500.75
+          },
+          "a": {
+            "type": "boolean",
+            "description": "Whether the order would be accepted (sufficient margin)",
+            "example": true
+          }
+        },
+        "required": [
+          "e",
+          "rm",
+          "a"
+        ],
+        "additionalProperties": false
       }
     }
   }

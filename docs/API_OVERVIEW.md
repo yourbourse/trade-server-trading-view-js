@@ -59,13 +59,12 @@ Real-time data streaming for market data, account updates, and trade executions.
 
 ### Channel Categories
 
-#### Account & Trading Channels (5)
+#### Account & Trading Channels (4)
 
 | Channel | Description | Snapshot | Streaming |
 |---------|-------------|:--------:|:---------:|
 | **orders** | Order updates (create, modify, fill, cancel) | ✅ | ✅ |
 | **positions** | Position changes and P&L updates | ✅ | ✅ |
-| **balances** | Balance and collateral updates | ✅ | ✅ |
 | **states** | Account state (equity, margin) | ✅ | ✅ |
 | **trades** | Trade execution notifications | ❌ | ✅ |
 

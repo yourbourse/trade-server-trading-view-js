@@ -4,14 +4,7 @@
  */
 
 import type { WebSocketMessage, ResponseType, QuoteData, BookData } from '../types/index.js';
-import type {
-    Order,
-    Position,
-    Balance,
-    AccountState,
-    Trade,
-    TransferHistory,
-} from '../../schema/public-api/types.gen.js';
+import type { Order, Position, AccountState, Trade, TransferHistory } from '../../schema/public-api/types.gen.js';
 import { SubscriptionManager } from './SubscriptionManager.js';
 import { logger } from '../../utils/logger.js';
 
@@ -57,9 +50,6 @@ export class MessageRouter {
             case 'positions':
                 this.handlePositionsUpdate(type!, data as Position[]);
                 break;
-            case 'balances':
-                this.handleBalancesUpdate(type!, data as Balance[]);
-                break;
             case 'states':
                 this.handleAccountStatesUpdate(type!, data as AccountState[]);
                 break;
@@ -97,14 +87,6 @@ export class MessageRouter {
     private handlePositionsUpdate(type: ResponseType, data: Position[]): void {
         this.subscriptions.notify('positions', { type, data });
         this.subscriptions.notify('position_update', { type, data });
-    }
-
-    /**
-     * Handle balances updates
-     */
-    private handleBalancesUpdate(type: ResponseType, data: Balance[]): void {
-        this.subscriptions.notify('balances', { type, data });
-        this.subscriptions.notify('balance_update', { type, data });
     }
 
     /**

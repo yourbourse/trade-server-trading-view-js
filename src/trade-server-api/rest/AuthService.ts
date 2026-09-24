@@ -4,7 +4,11 @@
  */
 
 import type { ApiToken, SuccessResponse } from '../../schema/public-api/types.gen.js';
-import { postAuthorize, postRefresh, logout } from '../../schema/public-api/sdk.gen.js';
+import {
+    authorize as sdkAuthorize,
+    refreshToken as sdkRefreshToken,
+    logout,
+} from '../../schema/public-api/sdk.gen.js';
 import { executeAuthenticatedRequest } from '../../utils/api.js';
 import { AuthUser } from '../../types/AuthUser.js';
 import { logger } from '../../utils/logger.js';
@@ -26,7 +30,7 @@ export class AuthService {
     async signIn(username: string | number): Promise<ApiToken | undefined> {
         this.log.info(`Signing in user: ${username}`);
         const body = { login: username };
-        const response = await executeAuthenticatedRequest<ApiToken>(this.user, postAuthorize, body, undefined, {
+        const response = await executeAuthenticatedRequest<ApiToken>(this.user, sdkAuthorize, body, undefined, {
             // Opt out of the 401/403 refresh probe — sign-in owns its own error display.
             // throwOnError lets signin.ts's catch see err.status for better messages.
             __ignoreStatusCodes: [401, 403],
@@ -55,7 +59,7 @@ export class AuthService {
      */
     async refreshToken(): Promise<ApiToken | undefined> {
         this.log.info('Refreshing API token');
-        const response = await executeAuthenticatedRequest<ApiToken>(this.user, postRefresh, {}, undefined, {
+        const response = await executeAuthenticatedRequest<ApiToken>(this.user, sdkRefreshToken, {}, undefined, {
             // Opt out of the 401/403/502 refresh probe to prevent recursion.
             // throwOnError makes doRefresh's catch see the real rejection.
             __ignoreStatusCodes: [401, 403, 502],

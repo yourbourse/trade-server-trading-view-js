@@ -134,11 +134,6 @@ Positions             →    handlePositionsUpdate→   Trading Panel
   p, pl, mp               "position_update"
 }
 
-Balances              →    handleBalancesUpdate →   Account Panel
-{                          notifyCallbacks          Balance
-  a, t, av, p             "balance_update"          display
-}
-
 Account States        →    handleAccountStates →    Account Panel
 {                          Update account data      Equity, margin
   b, C, pl, e, m, c       notifyCallbacks          display
@@ -172,7 +167,6 @@ Trades                →    handleTradesUpdate  →    Trade History
    │  └─ Wait for ack: {m:"subscribe", c:"orders", s:true, reqId}
    │
    ├─ subscribeToPositions(snapshot: true, sendPriceUpdates: true)
-   ├─ subscribeToBalances(snapshot: true)
    ├─ subscribeToAccountStates(snapshot: true)
    └─ subscribeToTrades()
 
@@ -219,7 +213,6 @@ Trades                →    handleTradesUpdate  →    Trade History
 |-------------|-------------------------------|-------------------------------------|-----------------|
 | `orders`    | subscribeToOrders()           | `orders`, `order_update`           | broker-api/     |
 | `positions` | subscribeToPositions()        | `positions`, `position_update`     | broker-api/     |
-| `balances`  | subscribeToBalances()         | `balances`, `balance_update`       | broker-api/     |
 | `states`    | subscribeToAccountStates()    | `states`, `account_state_update`   | broker-api/     |
 | `trades`    | subscribeToTrades()           | `trades`, `trade`                  | broker-api/     |
 
@@ -273,7 +266,6 @@ websocket: {
     autoSubscribe: {
         orders: true,
         positions: true,
-        balances: true,
         accountStates: true,
         trades: true
     },
@@ -376,7 +368,7 @@ export const CONFIG: AppConfig = {
    └─ Verify "WebSocket connected"
 
 2. Check Auto-Subscriptions
-   ├─ orders, positions, balances, states, trades
+   ├─ orders, positions, states, trades
    └─ Verify "All auto-subscriptions completed"
 
 3. Load Chart

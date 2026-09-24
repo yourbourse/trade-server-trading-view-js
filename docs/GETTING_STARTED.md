@@ -148,7 +148,7 @@ After signing in, the application:
 2. Stores session tokens in `sessionStorage`
 3. Redirects to the main trading terminal
 4. Connects to the WebSocket for real-time data
-5. Auto-subscribes to account channels (orders, positions, balances, account state)
+5. Auto-subscribes to account channels (orders, positions, account state)
 
 ### Expected Console Output
 
@@ -159,7 +159,6 @@ Initializing Trading Application...
 WebSocket connected
 Auto-subscribed to orders
 Auto-subscribed to positions
-Auto-subscribed to balances
 Auto-subscribed to account states
 Auto-subscribed to trades
 All auto-subscriptions completed successfully
