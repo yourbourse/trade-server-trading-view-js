@@ -13,11 +13,11 @@ export function formatOrDash(value: unknown): string {
 }
 
 /**
- * Same as `formatOrDash`, but for fields where the API uses `0` as a sentinel
- * for "no cap" (e.g. `max`; see broker-api.ts's `|| 1e12` fallback).
+ * Same as `formatOrDash`, but for fields where the API treats `0` or a missing
+ * value as "no cap" (e.g. `max`; see broker-api.ts's `|| 1e12` fallback).
  */
 export function formatOrUnlimited(value: unknown): string {
-    if (value === 0) {
+    if (value === 0 || value === undefined || value === null) {
         return 'Unlimited';
     }
     return formatOrDash(value);
