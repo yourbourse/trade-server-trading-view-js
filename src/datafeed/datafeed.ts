@@ -21,6 +21,7 @@ import type {
     QuotesCallback,
     QuotesErrorCallback,
     QuoteOkData,
+    Timezone,
 } from '../../charting_library/datafeed-api';
 import { SubscriberInfo } from './SubscriberInfo';
 import { TradeServerClient } from '../trade-server-api/TradeServerClient.js';
@@ -30,6 +31,7 @@ import { createLogger } from '../utils/logger.js';
 import { getErrorStatus } from '../utils/apiError';
 import { unescape } from 'lodash-es';
 import { buildSessionString } from '../utils/symbolSessions.js';
+import { DEFAULT_TIMEZONE, fetchServerTimezone } from '../utils/serverTimezone.js';
 import {
     formatOrDash,
     formatOrUnlimited,
@@ -71,7 +73,7 @@ export type ExtendedSymbolInfo = LibrarySymbolInfo & SecurityInfoFields;
  */
 export type ExtendedSymbolInfoFieldKey = keyof SecurityInfoFields;
 
-function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
+function buildExtendedSymbolInfo(symbolInfo: Symbol, timezone: Timezone): ExtendedSymbolInfo {
     // dp is the number of decimal places, pricescale = 10^dp. dp = 0 is a valid
     // value (whole-unit quotes), so only fall back when it is actually absent.
     const pricescale = Math.pow(10, symbolInfo.dp ?? 5);
@@ -81,7 +83,7 @@ function buildExtendedSymbolInfo(symbolInfo: Symbol): ExtendedSymbolInfo {
         description: unescape(symbolInfo.d),
         type: 'forex',
         session: buildSessionString(symbolInfo.q),
-        timezone: 'Etc/UTC',
+        timezone,
         currency_code: symbolInfo.p,
         // Empty: no broker/exchange name is displayed in the chart legend.
         exchange: '',
@@ -140,6 +142,9 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     api: TradeServerClient;
     subscribers: Record<string, SubscriberInfo>;
     configurationData: DatafeedConfiguration;
+    /** Symbol timezone; set before onReady calls back, so resolveSymbol always sees it. */
+    private serverTimezone: Timezone;
+    private serverTimezoneReady: Promise<void>;
     // Quote-related properties
     private quoteSubscriptions: Map<string, QuoteSubscription>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,6 +169,11 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         this.l1Listeners = new Map();
         this.quoteCacheEvictTimers = new Map();
         this.reconnectRegistered = false;
+        this.serverTimezone = DEFAULT_TIMEZONE;
+        // Started here so /now runs alongside the rest of app startup; onReady waits for it
+        this.serverTimezoneReady = fetchServerTimezone(tradeServerClient.account).then((timezone) => {
+            this.serverTimezone = timezone;
+        });
         logger.debug('✅ Datafeed implements:', {
             hasOnReady: typeof this.onReady === 'function',
             hasGetQuotes: typeof this.getQuotes === 'function',
@@ -184,10 +194,10 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
     onReady(callback: (config: DatafeedConfiguration) => void): void {
         logger.debug('⚙️ onReady called by TradingView');
         logger.debug('Configuration data:', this.configurationData);
-        setTimeout(() => {
+        void this.serverTimezoneReady.then(() => {
             callback(this.configurationData);
             logger.debug('✅ Configuration provided to TradingView');
-        }, 0);
+        });
     }
 
     /**
@@ -257,7 +267,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 // (e.g. session parsing), and that must not also trigger the error callback.
                 let extendedInfo: ExtendedSymbolInfo;
                 try {
-                    extendedInfo = buildExtendedSymbolInfo(symbolInfo);
+                    extendedInfo = buildExtendedSymbolInfo(symbolInfo, this.serverTimezone);
                 } catch (error: unknown) {
                     logger.error('resolveSymbol: failed to build symbol info for', symbolName, symbolInfo, error);
                     onResolveErrorCallback('Failed to build symbol info');
