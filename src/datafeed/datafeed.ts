@@ -47,7 +47,9 @@ interface QuoteSubscription {
 interface RawQuoteState {
     s: string;
     bp?: number;
+    bs?: number;
     ap?: number;
+    as?: number;
     bc?: number;
     t?: number;
     re?: boolean;
@@ -296,6 +298,8 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
         const ch = hasBidAndClose ? bid - previousBidClose : undefined;
         const chp = hasBidAndClose ? ((bid - previousBidClose) / previousBidClose) * 100 : undefined;
         const spread = bid !== undefined && ask !== undefined ? ask - bid : 0;
+        // Volume is the best size on the same side `lp` is taken from.
+        const volume = bid ? quote.bs : ask ? quote.as : undefined;
 
         return {
             s: 'ok',
@@ -309,7 +313,7 @@ class Datafeed implements IDatafeedChartApi, IDatafeedQuotesApi {
                 ask,
                 bid,
                 spread,
-                volume: 0,
+                volume,
             },
         };
     }
