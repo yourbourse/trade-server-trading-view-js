@@ -35,7 +35,7 @@
     "@hey-api/openapi-ts": "^0.99.0",
     "@types/crypto-js": "^4.2.0",
     "@types/lodash-es": "^4.17.12",
-    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.63.0",
     "eslint": "^9.39.5",
     "prettier": "^3.9.7",
